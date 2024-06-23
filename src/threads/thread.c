@@ -20,6 +20,10 @@
    of thread.h for details. */
 #define THREAD_MAGIC 0xcd6abf4b
 
+/* LIst of processes in THREAD_BLOCKED state, that is, processes
+   that are put into sleep for tick amount of time */
+static struct list sleep_list;
+
 /* List of processes in THREAD_READY state, that is, processes
    that are ready to run but not actually running. */
 static struct list ready_list;
@@ -61,6 +65,9 @@ bool thread_mlfqs;
 
 static void kernel_thread (thread_func *, void *aux);
 
+static bool wake_tick_less (const struct list_elem *a, 
+            const struct list_elem *b, void *aux UNUSED);
+
 static void idle (void *aux UNUSED);
 static struct thread *running_thread (void);
 static struct thread *next_thread_to_run (void);
@@ -90,6 +97,7 @@ thread_init (void)
   ASSERT (intr_get_level () == INTR_OFF);
 
   lock_init (&tid_lock);
+  list_init (&sleep_list);
   list_init (&ready_list);
   list_init (&all_list);
 
@@ -201,6 +209,14 @@ thread_create (const char *name, int priority,
   /* Add to run queue. */
   thread_unblock (t);
 
+  if (!list_empty(&ready_list)) {
+    struct thread *front = list_entry (list_front (&ready_list), struct thread,
+                                   elem);
+    if (t->priority > front->priority) {
+      thread_yield();
+    }
+  }
+
   return tid;
 }
 
@@ -220,6 +236,16 @@ thread_block (void)
   schedule ();
 }
 
+static bool
+priority_less (const struct list_elem *a, const struct list_elem *b,
+                void *aux UNUSED) 
+{
+  struct thread *ta = list_entry (a, struct thread, elem);
+  struct thread *tb = list_entry (b, struct thread, elem);
+  
+  return ta->priority > tb->priority;
+}
+
 /* Transitions a blocked thread T to the ready-to-run state.
    This is an error if T is not blocked.  (Use thread_yield() to
    make the running thread ready.)
@@ -237,8 +263,56 @@ thread_unblock (struct thread *t)
 
   old_level = intr_disable ();
   ASSERT (t->status == THREAD_BLOCKED);
-  list_push_back (&ready_list, &t->elem);
+  list_insert_ordered (&ready_list, &t->elem, priority_less, NULL);
   t->status = THREAD_READY;
+
+  intr_set_level (old_level);
+}
+
+static bool
+wake_tick_less (const struct list_elem *a, const struct list_elem *b,
+                void *aux UNUSED) 
+{
+  struct thread *ta = list_entry (a, struct thread, elem);
+  struct thread *tb = list_entry (b, struct thread, elem);
+  
+  return ta->wake_tick < tb->wake_tick;
+}
+
+void
+thread_sleep(int64_t wake_tick) {
+  struct thread *cur = thread_current ();
+  enum intr_level old_level;
+
+  old_level = intr_disable ();
+  
+  if (cur != idle_thread) {
+    cur->wake_tick = wake_tick;
+    list_insert_ordered (&sleep_list, &cur->elem, wake_tick_less, NULL);
+    thread_block();
+  }
+
+  intr_set_level (old_level);
+}
+
+void
+thread_wake(int64_t cur_tick) {
+  enum intr_level old_level;
+
+  old_level = intr_disable ();
+
+  while (!list_empty (&sleep_list)) {
+    struct list_elem *e = list_front (&sleep_list);
+    struct thread *t = list_entry (e, struct thread, elem);
+    if (t->wake_tick <= cur_tick) {
+      list_pop_front (&sleep_list);
+      thread_unblock (t);
+    } 
+    else {
+      break;
+    }
+  }
+  
   intr_set_level (old_level);
 }
 
@@ -308,7 +382,7 @@ thread_yield (void)
 
   old_level = intr_disable ();
   if (cur != idle_thread) 
-    list_push_back (&ready_list, &cur->elem);
+    list_insert_ordered (&ready_list, &cur->elem, priority_less, NULL);
   cur->status = THREAD_READY;
   schedule ();
   intr_set_level (old_level);
@@ -462,6 +536,7 @@ init_thread (struct thread *t, const char *name, int priority)
   strlcpy (t->name, name, sizeof t->name);
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
+  t->wake_tick = 0;
   t->magic = THREAD_MAGIC;
 
   old_level = intr_disable ();
