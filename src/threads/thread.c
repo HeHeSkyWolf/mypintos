@@ -190,7 +190,7 @@ thread_create (const char *name, int priority,
   /* Initialize thread. */
   init_thread (t, name, priority);
   tid = t->tid = allocate_tid ();
-
+  
   /* Stack frame for kernel_thread(). */
   kf = alloc_frame (t, sizeof *kf);
   kf->eip = NULL;
@@ -208,13 +208,12 @@ thread_create (const char *name, int priority,
 
   /* Add to run queue. */
   thread_unblock (t);
-
-  if (!list_empty(&ready_list)) {
-    struct thread *front = list_entry (list_front (&ready_list), struct thread,
-                                   elem);
-    if (t->priority > front->priority) {
-      thread_yield();
-    }
+  
+  struct thread *front = list_entry (list_front (&ready_list), struct thread,
+                                     elem);
+  struct thread *cur = thread_current ();
+  if (front->priority > cur->priority) {
+    thread_yield();
   }
 
   return tid;
@@ -236,7 +235,7 @@ thread_block (void)
   schedule ();
 }
 
-static bool
+bool
 priority_less (const struct list_elem *a, const struct list_elem *b,
                 void *aux UNUSED) 
 {
@@ -265,7 +264,6 @@ thread_unblock (struct thread *t)
   ASSERT (t->status == THREAD_BLOCKED);
   list_insert_ordered (&ready_list, &t->elem, priority_less, NULL);
   t->status = THREAD_READY;
-
   intr_set_level (old_level);
 }
 
@@ -410,6 +408,13 @@ void
 thread_set_priority (int new_priority) 
 {
   thread_current ()->priority = new_priority;
+
+  if (!list_empty(&ready_list)) {
+    struct thread *t = list_entry (list_front(&ready_list), struct thread, elem);
+    if (t->priority > new_priority) {
+      thread_yield();
+    }
+  }
 }
 
 /* Returns the current thread's priority. */

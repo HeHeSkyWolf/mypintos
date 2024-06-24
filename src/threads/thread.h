@@ -88,8 +88,9 @@ struct thread
     char name[16];                      /* Name (for debugging purposes). */
     uint8_t *stack;                     /* Saved stack pointer. */
     int priority;                       /* Priority. */
-    int64_t wake_tick;               /* Tick for a slept thread to wake up. */
     struct list_elem allelem;           /* List element for all threads list. */
+
+    int64_t wake_tick;               /* Tick for a slept thread to wake up. */
 
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /* List element. */
@@ -122,6 +123,9 @@ void thread_unblock (struct thread *);
 
 void thread_sleep(int64_t wake_tick);
 void thread_wake(int64_t cur_tick);
+
+bool priority_less (const struct list_elem *a, const struct list_elem *b,
+                    void *aux UNUSED);
 
 struct thread *thread_current (void);
 tid_t thread_tid (void);
