@@ -212,7 +212,7 @@ thread_create (const char *name, int priority,
   struct thread *front = list_entry (list_front (&ready_list), struct thread,
                                      elem);
   struct thread *cur = thread_current ();
-  if (front->priority > cur->priority) {
+  if (front->actual_priority > cur->actual_priority) {
     thread_yield();
   }
 
@@ -242,7 +242,7 @@ priority_less (const struct list_elem *a, const struct list_elem *b,
   struct thread *ta = list_entry (a, struct thread, elem);
   struct thread *tb = list_entry (b, struct thread, elem);
   
-  return ta->priority > tb->priority;
+  return ta->actual_priority > tb->actual_priority;
 }
 
 /* Transitions a blocked thread T to the ready-to-run state.
@@ -407,11 +407,21 @@ thread_foreach (thread_action_func *func, void *aux)
 void
 thread_set_priority (int new_priority) 
 {
-  thread_current ()->priority = new_priority;
+  struct thread *t = thread_current ();
+  if (t->actual_priority == t->priority) {
+    t->actual_priority = new_priority;
+  }
+
+  if (t->actual_priority < new_priority) {
+    t->actual_priority = new_priority;
+  }
+
+  t->priority = new_priority;
 
   if (!list_empty(&ready_list)) {
-    struct thread *t = list_entry (list_front(&ready_list), struct thread, elem);
-    if (t->priority > new_priority) {
+    struct thread *front = list_entry (list_front(&ready_list), struct thread, 
+                                   elem);
+    if (front->actual_priority > t->actual_priority) {
       thread_yield();
     }
   }
@@ -421,7 +431,7 @@ thread_set_priority (int new_priority)
 int
 thread_get_priority (void) 
 {
-  return thread_current ()->priority;
+  return thread_current ()->actual_priority;
 }
 
 /* Sets the current thread's nice value to NICE. */
@@ -541,8 +551,12 @@ init_thread (struct thread *t, const char *name, int priority)
   strlcpy (t->name, name, sizeof t->name);
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
-  t->wake_tick = 0;
   t->magic = THREAD_MAGIC;
+
+  t->wake_tick = 0;
+  t->actual_priority = priority;
+  list_init (&t->donations);
+  t->wait_on_lock = NULL;
 
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);
