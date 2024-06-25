@@ -300,10 +300,10 @@ thread_wake(int64_t cur_tick) {
   old_level = intr_disable ();
 
   while (!list_empty (&sleep_list)) {
-    struct list_elem *e = list_front (&sleep_list);
-    struct thread *t = list_entry (e, struct thread, elem);
+    struct list_elem *front = list_front (&sleep_list);
+    struct thread *t = list_entry (front, struct thread, elem);
     if (t->wake_tick <= cur_tick) {
-      list_pop_front (&sleep_list);
+      list_remove (front);
       thread_unblock (t);
     } 
     else {
