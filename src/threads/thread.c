@@ -242,7 +242,7 @@ priority_less (const struct list_elem *a, const struct list_elem *b,
   struct thread *ta = list_entry (a, struct thread, elem);
   struct thread *tb = list_entry (b, struct thread, elem);
   
-  return ta->actual_priority > tb->actual_priority;
+  return tb->actual_priority < ta->actual_priority;
 }
 
 /* Transitions a blocked thread T to the ready-to-run state.

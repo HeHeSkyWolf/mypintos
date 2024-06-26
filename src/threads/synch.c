@@ -194,7 +194,7 @@ donate_priority_less (const struct list_elem *a, const struct list_elem *b,
   struct thread *ta = list_entry (a, struct thread, d_elem);
   struct thread *tb = list_entry (b, struct thread, d_elem);
   
-  return ta->actual_priority > tb->actual_priority;
+  return tb->actual_priority < ta->actual_priority;
 }
 
 /* Acquires LOCK, sleeping until it becomes available if
@@ -363,7 +363,7 @@ sema_priority_less (const struct list_elem *a, const struct list_elem *b,
   struct semaphore_elem *sa = list_entry (a, struct semaphore_elem, elem);
   struct semaphore_elem *sb = list_entry (b, struct semaphore_elem, elem);
   
-  return sa->priority > sb->priority;
+  return sb->priority < sa->priority;
 }
 
 /* Atomically releases LOCK and waits for COND to be signaled by
