@@ -429,14 +429,6 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
   return true;
 }
 
-static struct list arg_list;
-
-struct arg_elem {
-  char *arg;
-  uintptr_t argv;
-  struct list_elem elem;
-};
-
 /* Create a minimal stack by mapping a zeroed page at the top of
    user virtual memory. */
 static bool
@@ -459,53 +451,59 @@ setup_stack (const char *file_name, void **esp)
         strlcpy (fn_copy, file_name, PGSIZE);
         char *token, *save_ptr;
 
-        list_init (&arg_list);
-
         int argc = 0;
+        int argv_len = 0;
         
         for (token = strtok_r (fn_copy, " ", &save_ptr); token != NULL;
               token = strtok_r (NULL, " ", &save_ptr)) {
-          // printf ("'%s'\n", token);
-          struct arg_elem argu;
-          argu.arg = malloc(strlen(token) + 1);
-          strlcpy(argu.arg, token, strlen(token) + 1);
-          list_push_back (&arg_list, &argu.elem);
+          int len = strlen(token);
+
+          *esp -= len + 1;
+          argv_len += len + 1;
+          // printf("esp: %p\n", argu->argv);
+
           argc++;
         }
 
         palloc_free_page (fn_copy);
         
         // printf("argc: %d\n", argc);
-        int argv_len = 0;
-
-        for (int i = 0; i < argc; i++) {
-          struct arg_elem *argu = list_entry (list_pop_back (&arg_list), struct arg_elem, elem);
-
-          // printf("from list: %s\n", argu->arg);
-          int len = strlen(argu->arg);
-          *esp -= len + 1;
-          argu->argv = (uintptr_t) *esp;
-          // printf("esp: %p\n", argu->argv);
-
-          memcpy(*esp, argu->arg, len);
-          memset(*esp + len, '\0', 1);
-
-          // printf("esp: %p\n", *esp);
-          argv_len += len + 1;
-
-          free(argu->arg);
-          list_push_front (&arg_list, &argu->elem);
-        }
-
+        
         // printf("word align %d\n", argv_len % 4);
-        *esp -= argv_len % 4;
+        *esp -= 4 - (argv_len % 4);
         *esp -= NULL_POINTER_SENTINEL;
+        int align_len = (4 - (argv_len % 4)) + NULL_POINTER_SENTINEL;
+        *esp -= sizeof(uintptr_t) * argc;
 
-        for (int i = 0; i < argc; i++) {
-          struct arg_elem *argu = list_entry (list_pop_back (&arg_list), struct arg_elem, elem);
-          *esp -= sizeof(uintptr_t);
-          memcpy (*esp, &argu->argv, sizeof(uintptr_t));
+        fn_copy = palloc_get_page (0);
+        if (fn_copy == NULL)
+          return false;
+        strlcpy (fn_copy, file_name, PGSIZE);
+
+        int arg_ctr = 0;
+        argv_len = 0;
+
+        for (token = strtok_r (fn_copy, " ", &save_ptr); token != NULL;
+              token = strtok_r (NULL, " ", &save_ptr)) {
+          int len = strlen(token);
+          void *argv = *esp + ((argc - arg_ctr) * sizeof(uintptr_t)) 
+                       + align_len + argv_len;
+          void *argv_addr = *esp + (arg_ctr * sizeof(uintptr_t));
+
+          memcpy(argv, token, len);
+          memset(argv + len, '\0', 1);
+
+          printf("argv: %p\n", argv);
+          printf("argv_addr: %p\n", argv_addr);
+
+          uintptr_t argv_data_addr = (uintptr_t) argv;
+          memcpy (argv_addr, &argv_data_addr, sizeof(uintptr_t));
+
+          argv_len += len + 1;
+          arg_ctr++;
         }
+
+        palloc_free_page (fn_copy);
 
         uintptr_t argv = (uintptr_t) *esp;
         *esp -= sizeof(uintptr_t);
@@ -518,10 +516,10 @@ setup_stack (const char *file_name, void **esp)
         int return_addr = 0;
         memcpy (*esp, &return_addr, sizeof(int));
 
-        // printf("esp: %p\n", *esp);
+        printf("esp: %p\n", *esp);
 
         // *esp = PHYS_BASE - 32;
-        // hex_dump((uintptr_t)PHYS_BASE - 32, *esp, 32, true);
+        hex_dump((uintptr_t) *esp, *esp, 32, true);
       }
       else
         palloc_free_page (kpage);
