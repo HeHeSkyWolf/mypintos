@@ -16,7 +16,9 @@
 #include "threads/interrupt.h"
 #include "threads/palloc.h"
 #include "threads/thread.h"
-#include "threads/vaddr.h"
+#include "threads/vaddr.h" 
+
+#include "threads/malloc.h"
 
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
@@ -198,7 +200,7 @@ struct Elf32_Phdr
 #define PF_W 2          /* Writable. */
 #define PF_R 4          /* Readable. */
 
-static bool setup_stack (void **esp);
+static bool setup_stack (const char *file_name, void **esp);
 static bool validate_segment (const struct Elf32_Phdr *, struct file *);
 static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
                           uint32_t read_bytes, uint32_t zero_bytes,
@@ -305,7 +307,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
     }
 
   /* Set up stack. */
-  if (!setup_stack (esp))
+  if (!setup_stack (file_name, esp))
     goto done;
 
   /* Start address. */
@@ -427,10 +429,18 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
   return true;
 }
 
+static struct list arg_list;
+
+struct arg_elem {
+  char *arg;
+  uintptr_t argv;
+  struct list_elem elem;
+};
+
 /* Create a minimal stack by mapping a zeroed page at the top of
    user virtual memory. */
 static bool
-setup_stack (void **esp) 
+setup_stack (const char *file_name, void **esp) 
 {
   uint8_t *kpage;
   bool success = false;
@@ -439,9 +449,80 @@ setup_stack (void **esp)
   if (kpage != NULL) 
     {
       success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
-      if (success)
-        // *esp = PHYS_BASE;
-        *esp = PHYS_BASE - 12;
+      if (success) {
+        *esp = PHYS_BASE;
+        
+        // 4KB argument limit
+        char *fn_copy = palloc_get_page (0);
+        if (fn_copy == NULL)
+          return false;
+        strlcpy (fn_copy, file_name, PGSIZE);
+        char *token, *save_ptr;
+
+        list_init (&arg_list);
+
+        int argc = 0;
+        
+        for (token = strtok_r (fn_copy, " ", &save_ptr); token != NULL;
+              token = strtok_r (NULL, " ", &save_ptr)) {
+          // printf ("'%s'\n", token);
+          struct arg_elem argu;
+          argu.arg = malloc(strlen(token) + 1);
+          strlcpy(argu.arg, token, strlen(token) + 1);
+          list_push_back (&arg_list, &argu.elem);
+          argc++;
+        }
+
+        palloc_free_page (fn_copy);
+        
+        // printf("argc: %d\n", argc);
+        int argv_len = 0;
+
+        for (int i = 0; i < argc; i++) {
+          struct arg_elem *argu = list_entry (list_pop_back (&arg_list), struct arg_elem, elem);
+
+          // printf("from list: %s\n", argu->arg);
+          int arg_len = strlen(argu->arg);
+          *esp -= arg_len + 1;
+          argu->argv = (uintptr_t) *esp;
+          // printf("esp: %p\n", argu->argv);
+
+          memcpy(*esp, argu->arg, arg_len);
+          memset(*esp + arg_len, '\0', 1);
+
+          // printf("esp: %p\n", *esp);
+          argv_len += arg_len + 1;
+
+          free(argu->arg);
+          list_push_front (&arg_list, &argu->elem);
+        }
+
+        // printf("word align %d\n", argv_len % 4);
+        *esp -= argv_len % 4;
+        *esp -= NULL_POINTER_SENTINEL;
+
+        for (int i = 0; i < argc; i++) {
+          struct arg_elem *argu = list_entry (list_pop_back (&arg_list), struct arg_elem, elem);
+          *esp -= sizeof(uintptr_t);
+          memcpy (*esp, &argu->argv, sizeof(uintptr_t));
+        }
+
+        uintptr_t argv = (uintptr_t) *esp;
+        *esp -= sizeof(uintptr_t);
+        memcpy (*esp, &argv, sizeof(uintptr_t));
+
+        *esp -= sizeof(int);
+        memcpy (*esp, &argc, sizeof(int));
+
+        *esp -= sizeof(int);
+        int return_addr = 0;
+        memcpy (*esp, &return_addr, sizeof(int));
+
+        // printf("esp: %p\n", *esp);
+
+        // *esp = PHYS_BASE - 32;
+        // hex_dump((uintptr_t)PHYS_BASE - 32, *esp, 32, true);
+      }
       else
         palloc_free_page (kpage);
     }

@@ -4,7 +4,12 @@
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 
+#include "threads/vaddr.h"
+#include "userprog/pagedir.h"
+#include "devices/shutdown.h"
+
 static void syscall_handler (struct intr_frame *);
+void exit (int status);
 
 void
 syscall_init (void) 
@@ -12,6 +17,22 @@ syscall_init (void)
   intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
 }
 
+static bool
+valid_uaddr (const uint8_t *uaddr)
+{
+  if (!is_user_vaddr(uaddr))
+    return false;
+
+  if (uaddr == NULL)
+    return false;
+
+  struct thread *t = thread_current ();
+  if (pagedir_get_page (t->pagedir, uaddr) == NULL)
+    return false;
+
+  // printf("is valid addr\n");
+  return true;
+}
 	
 /* Reads a byte at user virtual address UADDR.
    UADDR must be below PHYS_BASE.
@@ -44,8 +65,25 @@ copy_in  (void *dst_, const void *usrc_, size_t size)
   uint8_t *dst = dst_;
   const uint8_t *usrc = usrc_;
 
+  if (!valid_uaddr(usrc)) {
+    exit(-1);
+  }
+
   for (; size > 0; size--, dst++, usrc++)
     *dst = get_user (usrc);
+}
+
+void
+halt (void) {
+  shutdown_power_off ();
+}
+
+void
+exit (int status)
+{
+  struct thread *t = thread_current ();
+  printf("%s: exit(%d)\n", t->name, status);
+  thread_exit ();
 }
 
 static void
@@ -56,13 +94,25 @@ syscall_handler (struct intr_frame *f UNUSED)
 
   // extract syscall number
   copy_in (&syscall_nr, f->esp, sizeof syscall_nr);
-  printf ("   ***syscall number: %u (should be %u)\n", syscall_nr, SYS_WRITE);
+  // printf ("   ***syscall number: %u (should be %u)\n", syscall_nr, SYS_WRITE);
 
-  // extract 3 arguments
+  // extract 3 arguments, fd means file descripter
   copy_in (args, (uint32_t *) f->esp + 1, sizeof *args * 3);
-  printf (" ***fd: %d (should be %u)\n", args[0], STDOUT_FILENO);
-  printf (" ***buffer address: %p\n", args[1]);
-  printf (" ***size: %u\n", args[2]);
+  // printf ("   ***fd: %d (should be %u)\n", args[0], STDOUT_FILENO);
+  // printf ("   ***buffer address: %p\n", args[1]);
+  // printf ("   ***size: %u\n", args[2]);
+
+  switch (syscall_nr) {
+    case SYS_HALT:
+      halt ();
+      break;
+    case SYS_EXIT:
+      exit (0);
+      break;
+    case SYS_WRITE:
+      // printf("hi in write\n");
+      break;
+  }
 
   // execute the write on STDOUT_FILENO
   putbuf (args[1], args[2]);
