@@ -482,16 +482,16 @@ setup_stack (const char *file_name, void **esp)
           struct arg_elem *argu = list_entry (list_pop_back (&arg_list), struct arg_elem, elem);
 
           // printf("from list: %s\n", argu->arg);
-          int arg_len = strlen(argu->arg);
-          *esp -= arg_len + 1;
+          int len = strlen(argu->arg);
+          *esp -= len + 1;
           argu->argv = (uintptr_t) *esp;
           // printf("esp: %p\n", argu->argv);
 
-          memcpy(*esp, argu->arg, arg_len);
-          memset(*esp + arg_len, '\0', 1);
+          memcpy(*esp, argu->arg, len);
+          memset(*esp + len, '\0', 1);
 
           // printf("esp: %p\n", *esp);
-          argv_len += arg_len + 1;
+          argv_len += len + 1;
 
           free(argu->arg);
           list_push_front (&arg_list, &argu->elem);
