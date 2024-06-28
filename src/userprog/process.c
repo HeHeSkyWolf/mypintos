@@ -40,11 +40,23 @@ process_execute (const char *file_name)
     return TID_ERROR;
   strlcpy (fn_copy, file_name, PGSIZE);
 
+  char *thread_copy = palloc_get_page (0);
+  if (thread_copy == NULL) {
+    palloc_free_page (fn_copy);
+    return TID_ERROR;
+  }
+  char *thread_name, *save_ptr;
+  strlcpy (thread_copy, file_name, PGSIZE);
+  thread_name = strtok_r (thread_copy, " ", &save_ptr);
+  // printf("thread name: %s\n", thread_name);
+
   /* Create a new thread to execute FILE_NAME. */
-  tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
+  tid = thread_create (thread_name, PRI_DEFAULT, start_process, fn_copy);
   if (tid == TID_ERROR)
     palloc_free_page (fn_copy); 
   
+  palloc_free_page (thread_copy);
+
   struct thread *cur = thread_current ();
   // printf("name: %s, %d\n", cur->name, tid);
   struct thread *child = find_thread_by_tid (tid);
@@ -233,13 +245,23 @@ load (const char *file_name, void (**eip) (void), void **esp)
     goto done;
   process_activate ();
 
+  char *fn_copy = palloc_get_page (0);
+  if (fn_copy == NULL)
+    goto done;
+  strlcpy (fn_copy, file_name, PGSIZE);
+  char *f_name, *save_ptr;
+  f_name = strtok_r (fn_copy, " ", &save_ptr);
+  // printf("file name: %s\n", f_name);
+
   /* Open executable file. */
-  file = filesys_open (file_name);
+  file = filesys_open (f_name);
   if (file == NULL) 
     {
-      printf ("load: %s: open failed\n", file_name);
+      printf ("load: %s: open failed\n", f_name);
       goto done; 
     }
+
+  palloc_free_page (fn_copy);
 
   /* Read and verify executable header. */
   if (file_read (file, &ehdr, sizeof ehdr) != sizeof ehdr
@@ -493,10 +515,10 @@ setup_stack (const char *file_name, void **esp)
         for (token = strtok_r (fn_copy, " ", &save_ptr); token != NULL;
               token = strtok_r (NULL, " ", &save_ptr)) {
           int len = strlen(token);
-          void *argv = *esp + ((argc - arg_ctr) * sizeof(uintptr_t)) 
-                       + align_len + argv_len;
           void *argv_addr = *esp + (arg_ctr * sizeof(uintptr_t));
+          void *argv = argv_addr + ((argc - arg_ctr) * sizeof(uintptr_t)) + align_len + argv_len;
 
+          // printf("token: %s\n", token);
           memcpy(argv, token, len);
           memset(argv + len, '\0', 1);
 
@@ -526,7 +548,7 @@ setup_stack (const char *file_name, void **esp)
         // printf("esp: %p\n", *esp);
 
         // *esp = PHYS_BASE - 32;
-        // hex_dump((uintptr_t) *esp, *esp, 32, true);
+        // hex_dump((uintptr_t) *esp, *esp, (uintptr_t) PHYS_BASE - (uintptr_t) *esp, true);
       }
       else
         palloc_free_page (kpage);
