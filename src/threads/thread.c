@@ -268,6 +268,56 @@ thread_current (void)
   return t;
 }
 
+struct thread *
+find_thread_by_tid (tid_t tid)
+{
+  if (!list_empty (&all_list)) {
+    struct list_elem *e;
+    for (e = list_rbegin (&all_list); e != list_rend (&all_list); e = list_prev (e)) {
+      struct thread *t = list_entry (e, struct thread, allelem);
+      if (tid == t->tid) {
+        return t;
+      }
+    }
+  }
+  return NULL;
+}
+
+struct thread *
+find_child_by_tid (tid_t tid)
+{
+  struct thread *cur = thread_current ();
+  struct thread *child = cur->child;
+  if (child != NULL) {
+    if (child->tid == tid) {
+      return child;
+    }
+
+    if (!list_empty (&child->sibling_list)) {
+      struct list_elem *e;
+      for (e = list_begin (&child->sibling_list); e != list_end (&child->sibling_list); e = list_next (e)) {
+        struct thread *t = list_entry (e, struct thread, sibling_elem);
+        printf("tid: %d, name: %s\n", t->tid, t->name);
+        if (tid == t->tid) {
+          return t;
+        }
+      }
+    }
+  }
+  return NULL;
+}
+
+void
+add_child (struct thread *parent, struct thread *child) {
+  child->parent = parent;
+  if (parent->child == NULL) {
+    parent->child = child;
+  }
+  else {
+    list_push_back (&parent->child->sibling_list, &child->sibling_elem);
+  }
+}
+
 /* Returns the running thread's tid. */
 tid_t
 thread_tid (void) 
@@ -463,6 +513,12 @@ init_thread (struct thread *t, const char *name, int priority)
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
   t->magic = THREAD_MAGIC;
+
+  t->return_status = -1;
+  t->parent = NULL;
+  t->child = NULL;
+  list_init (&t->sibling_list);
+  sema_init (&t->wait_sema, 0);
 
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);

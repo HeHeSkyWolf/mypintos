@@ -7,9 +7,15 @@
 #include "threads/vaddr.h"
 #include "userprog/pagedir.h"
 #include "devices/shutdown.h"
+#include "userprog/process.h"
 
 static void syscall_handler (struct intr_frame *);
-void exit (int status);
+
+static void syscall_halt (void);
+static void syscall_exit (struct intr_frame *);
+static void syscall_exec (struct intr_frame *);
+static void syscall_wait (struct intr_frame *);
+
 
 void
 syscall_init (void) 
@@ -66,24 +72,58 @@ copy_in  (void *dst_, const void *usrc_, size_t size)
   const uint8_t *usrc = usrc_;
 
   if (!valid_uaddr(usrc)) {
-    exit(-1);
+    return;
   }
+
 
   for (; size > 0; size--, dst++, usrc++)
     *dst = get_user (usrc);
 }
 
-void
-halt (void) {
+static void
+syscall_halt (void) {
   shutdown_power_off ();
 }
 
-void
-exit (int status)
+static void
+syscall_exit (struct intr_frame *f UNUSED)
 {
+  int args[1];
+  copy_in (args, (uint32_t *) f->esp + 1, sizeof *args);
+
   struct thread *t = thread_current ();
-  printf("%s: exit(%d)\n", t->name, status);
+  printf("%s: exit(%d)\n", t->name, args[0]);
+  t->return_status = args[0];
+  f->eax = args[0];
+  if (!list_empty(&t->parent->child->sibling_list)) {
+    list_remove (&t->sibling_elem);
+  }
+  sema_up (&t->wait_sema);
   thread_exit ();
+}
+
+static void
+syscall_exec (struct intr_frame *f UNUSED) {
+
+}
+
+static void
+syscall_wait (struct intr_frame *f UNUSED) {
+  
+}
+
+static void
+syscall_write (struct intr_frame *f UNUSED) {
+  int args[3];
+  copy_in (args, (uint32_t *) f->esp + 1, sizeof *args * 3);
+  
+  int fd = (int) args[0];
+  if (fd == 1) {
+    // execute the write on STDOUT_FILENO
+    putbuf ((const char *)args[1], (size_t) args[2]);
+    // set the returned value
+    f->eax = args[2];
+  }
 }
 
 static void
@@ -104,21 +144,21 @@ syscall_handler (struct intr_frame *f UNUSED)
 
   switch (syscall_nr) {
     case SYS_HALT:
-      halt ();
+      syscall_halt ();
       break;
     case SYS_EXIT:
-      exit (0);
+      syscall_exit (f);
+      break;
+    case SYS_EXEC:
+      syscall_exec (f);
+      break;
+    case SYS_WAIT:
+      syscall_wait (f);
       break;
     case SYS_WRITE:
-      // printf("hi in write\n");
+      syscall_write (f);
       break;
   }
-
-  // execute the write on STDOUT_FILENO
-  putbuf (args[1], args[2]);
-
-  // set the returned value
-  f->eax = args[2];
 
   // printf ("system call!\n");
   // thread_exit ();

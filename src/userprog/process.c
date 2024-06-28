@@ -44,6 +44,11 @@ process_execute (const char *file_name)
   tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
   if (tid == TID_ERROR)
     palloc_free_page (fn_copy); 
+  
+  struct thread *cur = thread_current ();
+  // printf("name: %s, %d\n", cur->name, tid);
+  struct thread *child = find_thread_by_tid (tid);
+  add_child (cur, child);
   return tid;
 }
 
@@ -90,10 +95,12 @@ start_process (void *file_name_)
 int
 process_wait (tid_t child_tid UNUSED) 
 {
-  while (1) {
-    
+  struct thread *child = find_child_by_tid (child_tid);
+  if (child == NULL) {
+    return -1;
   }
-  return -1;
+  sema_down (&child->wait_sema);
+  return child->return_status;
 }
 
 /* Free the current process's resources. */
@@ -493,8 +500,8 @@ setup_stack (const char *file_name, void **esp)
           memcpy(argv, token, len);
           memset(argv + len, '\0', 1);
 
-          printf("argv: %p\n", argv);
-          printf("argv_addr: %p\n", argv_addr);
+          // printf("argv: %p\n", argv);
+          // printf("argv_addr: %p\n", argv_addr);
 
           uintptr_t argv_data_addr = (uintptr_t) argv;
           memcpy (argv_addr, &argv_data_addr, sizeof(uintptr_t));
@@ -516,10 +523,10 @@ setup_stack (const char *file_name, void **esp)
         int return_addr = 0;
         memcpy (*esp, &return_addr, sizeof(int));
 
-        printf("esp: %p\n", *esp);
+        // printf("esp: %p\n", *esp);
 
         // *esp = PHYS_BASE - 32;
-        hex_dump((uintptr_t) *esp, *esp, 32, true);
+        // hex_dump((uintptr_t) *esp, *esp, 32, true);
       }
       else
         palloc_free_page (kpage);
