@@ -8,6 +8,7 @@
 #include "userprog/pagedir.h"
 #include "devices/shutdown.h"
 #include "userprog/process.h"
+#include "filesys/filesys.h"
 
 static void syscall_handler (struct intr_frame *);
 
@@ -16,6 +17,10 @@ static void syscall_halt (void);
 static void syscall_exit (struct intr_frame *);
 static void syscall_exec (struct intr_frame *);
 static void syscall_wait (struct intr_frame *);
+static void syscall_create (struct intr_frame *);
+
+static void syscall_write (struct intr_frame *);
+
 
 
 void
@@ -25,14 +30,16 @@ syscall_init (void)
 }
 
 static bool
-valid_uaddr (const uint8_t *uaddr)
+valid_uaddr (const void *uaddr)
 {
+  /* do i need to check all args address? */
+
   if (!is_user_vaddr(uaddr))
     return false;
 
   if (uaddr == NULL)
     return false;
-
+  
   struct thread *t = thread_current ();
   if (pagedir_get_page (t->pagedir, uaddr) == NULL)
     return false;
@@ -76,9 +83,23 @@ copy_in  (void *dst_, const void *usrc_, size_t size)
     kernel_exit (-1);
   }
 
-
   for (; size > 0; size--, dst++, usrc++)
     *dst = get_user (usrc);
+}
+
+static void
+kernel_exit (int status)
+{
+  
+  struct thread *t = thread_current ();
+  printf("%s: exit(%d)\n", t->name, status);
+  t->return_status = status;
+
+  if (!list_empty(&t->parent->child->sibling_list)) {
+    list_remove (&t->sibling_elem);
+  }
+  sema_up (&t->wait_sema);
+  thread_exit ();
 }
 
 static void
@@ -91,25 +112,12 @@ syscall_exit (struct intr_frame *f UNUSED)
 {
   int args[1];
   copy_in (args, (uint32_t *) f->esp + 1, sizeof *args);
-
-  struct thread *t = thread_current ();
-  printf("%s: exit(%d)\n", t->name, args[0]);
-  t->return_status = args[0];
-  f->eax = args[0];
-  if (!list_empty(&t->parent->child->sibling_list)) {
-    list_remove (&t->sibling_elem);
-  }
-  sema_up (&t->wait_sema);
-  thread_exit ();
-}
-
-static void
-kernel_exit (int status)
-{
+  int status = (int) args[0];
+  
   struct thread *t = thread_current ();
   printf("%s: exit(%d)\n", t->name, status);
   t->return_status = status;
-
+  f->eax = status;
   if (!list_empty(&t->parent->child->sibling_list)) {
     list_remove (&t->sibling_elem);
   }
@@ -124,7 +132,37 @@ syscall_exec (struct intr_frame *f UNUSED) {
 
 static void
 syscall_wait (struct intr_frame *f UNUSED) {
+  int args[1];
+  copy_in (args, (uint32_t *) f->esp + 1, sizeof *args);
+
+  int status = process_wait ((tid_t) args[0]);
+  f->eax = status;
+}
+
+static void
+syscall_create (struct intr_frame *f UNUSED)
+{
+  int args[2];
+  copy_in (args, (uint32_t *) f->esp + 1, sizeof *args * 2);
+
+  // printf ("   ***fd: %p\n", (void *) args[0]);
+  // printf ("   ***fd: %p\n", (char *) args[0]);
+
+  if (!valid_uaddr ((void *) args[0])) {
+    kernel_exit (-1);
+  }
   
+  const char *file = (const char *) args[0];
+  off_t initial_size = (off_t) args[1];
+  // printf ("   ***fd: %p\n", (void *) file);
+  // printf ("   ***buffer address: %d\n", (off_t) args[1]);
+
+  if (file == NULL || initial_size < 0) {
+    kernel_exit (-1);
+  }
+
+  bool success = filesys_create (file, initial_size);
+  f->eax = success;
 }
 
 static void
@@ -144,7 +182,7 @@ syscall_write (struct intr_frame *f UNUSED) {
 static void
 syscall_handler (struct intr_frame *f UNUSED) 
 {
-  unsigned syscall_nr;
+  unsigned int syscall_nr;
   int args[3];
 
   // extract syscall number
@@ -169,6 +207,9 @@ syscall_handler (struct intr_frame *f UNUSED)
       break;
     case SYS_WAIT:
       syscall_wait (f);
+      break;
+    case SYS_CREATE:
+      syscall_create (f);
       break;
     case SYS_WRITE:
       syscall_write (f);
