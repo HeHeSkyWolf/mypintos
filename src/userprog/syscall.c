@@ -11,6 +11,7 @@
 
 static void syscall_handler (struct intr_frame *);
 
+static void kernel_exit (int status);
 static void syscall_halt (void);
 static void syscall_exit (struct intr_frame *);
 static void syscall_exec (struct intr_frame *);
@@ -72,7 +73,7 @@ copy_in  (void *dst_, const void *usrc_, size_t size)
   const uint8_t *usrc = usrc_;
 
   if (!valid_uaddr(usrc)) {
-    return;
+    kernel_exit (-1);
   }
 
 
@@ -95,6 +96,20 @@ syscall_exit (struct intr_frame *f UNUSED)
   printf("%s: exit(%d)\n", t->name, args[0]);
   t->return_status = args[0];
   f->eax = args[0];
+  if (!list_empty(&t->parent->child->sibling_list)) {
+    list_remove (&t->sibling_elem);
+  }
+  sema_up (&t->wait_sema);
+  thread_exit ();
+}
+
+static void
+kernel_exit (int status)
+{
+  struct thread *t = thread_current ();
+  printf("%s: exit(%d)\n", t->name, status);
+  t->return_status = status;
+
   if (!list_empty(&t->parent->child->sibling_list)) {
     list_remove (&t->sibling_elem);
   }
@@ -157,6 +172,10 @@ syscall_handler (struct intr_frame *f UNUSED)
       break;
     case SYS_WRITE:
       syscall_write (f);
+      break;
+    default:
+      /* kill process like this? */
+      kernel_exit (-1);
       break;
   }
 
