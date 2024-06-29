@@ -98,7 +98,6 @@ struct thread
     /* Process */
     struct process *proc_info;
     struct thread *parent;
-    struct list_elem sibling_elem;
     struct process *child_proc;
 
 #ifdef USERPROG
@@ -115,6 +114,7 @@ struct process {
     struct thread *correspond_thread;
 
     struct list sibling_list;
+    struct list_elem sibling_elem;
 
     struct semaphore wait_sema;
     bool wait_status;

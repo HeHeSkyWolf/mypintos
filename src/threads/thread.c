@@ -329,7 +329,7 @@ add_child (struct thread *parent, struct thread *child) {
     parent->child_proc = child->proc_info;
   }
   else {
-    list_push_back (&parent->child_proc->sibling_list, &child->sibling_elem);
+    list_push_back (&parent->child_proc->sibling_list, &child->proc_info->sibling_elem);
   }
   intr_set_level (old_level);
 }
@@ -341,10 +341,10 @@ remove_child (struct thread *t) {
   old_level = intr_disable ();
   if (t->child_proc != NULL) {
     while (!list_empty (&t->child_proc->sibling_list)) {
-      struct thread *child = list_entry (list_pop_back 
+      struct process *child = list_entry (list_pop_back 
                                          (&t->child_proc->sibling_list), 
-                                          struct thread, sibling_elem);
-      child->parent = NULL;
+                                          struct process, sibling_elem);
+      child->correspond_thread->parent = NULL;
     }
     t->child_proc->correspond_thread->parent = NULL;
     t->child_proc = NULL;

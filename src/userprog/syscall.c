@@ -132,7 +132,7 @@ syscall_wait (struct intr_frame *f UNUSED) {
   copy_in (args, (uint32_t *) f->esp + 1, sizeof *args);
   tid_t tid = (tid_t) args[0];
 
-  struct thread *cur = thread_current ();
+  // struct thread *cur = thread_current ();
   // printf("current thread: %s\n", cur->name);
   // printf("tid in wait: %d\n", tid);
 
@@ -182,7 +182,7 @@ syscall_open (struct intr_frame *f UNUSED)
 
   valid_uaddr ((void *) args[0]);
 
-  const char *file_name = (const char *) args[0];
+  // const char *file_name = (const char *) args[0];
 
   // struct file *file = filesys_open (file_name);
   // printf("%u\n",);

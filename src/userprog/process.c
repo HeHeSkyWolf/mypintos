@@ -41,10 +41,10 @@ find_child_by_pid (struct thread *parent, tid_t pid)
     if (!list_empty (&child->sibling_list)) {
       struct list_elem *e;
       for (e = list_begin (&child->sibling_list); e != list_end (&child->sibling_list); e = list_next (e)) {
-        struct thread *t = list_entry (e, struct thread, sibling_elem);
+        struct process *t = list_entry (e, struct process, sibling_elem);
         // printf("tid: %d, name: %s\n", t->tid, t->name);
-        if (pid == t->tid) {
-          result = t->proc_info;
+        if (pid == t->pid) {
+          result = t;
         }
       }
     }
@@ -88,21 +88,21 @@ process_execute (const char *file_name)
   
   palloc_free_page (thread_copy);
 
-  // struct thread *cur = thread_current ();
+  struct thread *cur = thread_current ();
   // printf("name: %s, %d\n", cur->name, tid);
   // load status
 
-  // struct thread *child = find_thread_by_tid (tid);
+  struct process *child_proc = find_child_by_pid (cur, tid);
   // struct process *child_proc = child->proc_info;
   // printf("name: %s, %d\n", child->name, child->tid);
   // printf("return status %d\n", cur->proc_info->return_status);
 
-  // sema_down (&child_proc->exec_sema);
-  // if (!child_proc->load_status) {
-  //   free (child_proc);
-  //   palloc_free_page (fn_copy); 
-  //   return TID_ERROR;
-  // }
+  sema_down (&child_proc->exec_sema);
+  if (!child_proc->load_status) {
+    free (child_proc);
+    palloc_free_page (fn_copy); 
+    return TID_ERROR;
+  }
   // printf("name: %s, %d\n", child->name, child->tid);
 
   return tid;
@@ -126,11 +126,13 @@ start_process (void *file_name_)
 
   /* If load failed, quit. */
   palloc_free_page (file_name);
-  if (!success) 
+  if (!success) {
+    sema_up (&thread_current ()->proc_info->exec_sema);
     thread_exit ();
+  }
   
   thread_current ()->proc_info->load_status = true;
-  // sema_up (&thread_current ()->exec_sema);
+  sema_up (&thread_current ()->proc_info->exec_sema);
 
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
@@ -171,8 +173,8 @@ process_wait (tid_t child_tid UNUSED)
   if (cur->child_proc->pid == child->pid) {
     if (!list_empty (&child->sibling_list)) {
       struct list_elem *child_elem = list_pop_front (&child->sibling_list);
-      struct thread *next_child = list_entry (child_elem, struct thread, sibling_elem);
-      cur->child_proc = next_child->proc_info;
+      struct process *next_child = list_entry (child_elem, struct process, sibling_elem);
+      cur->child_proc = next_child;
     }
     else {
       cur->child_proc = NULL;
@@ -180,7 +182,7 @@ process_wait (tid_t child_tid UNUSED)
     child->correspond_thread->parent = NULL;
   }
   else {
-    list_remove (&child->correspond_thread->sibling_elem);
+    list_remove (&child->sibling_elem);
   }
   
   if (!child->is_terminated) {
