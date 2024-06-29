@@ -215,7 +215,7 @@ syscall_handler (struct intr_frame *f UNUSED)
 
   // extract syscall number
   copy_in (&syscall_nr, f->esp, sizeof syscall_nr);
-  printf ("   ***syscall number: %u\n", syscall_nr);
+  // printf ("   ***syscall number: %u\n", syscall_nr);
 
   // extract 3 arguments, fd means file descripter
   // copy_in (args, (uint32_t *) f->esp + 1, sizeof *args * 3);

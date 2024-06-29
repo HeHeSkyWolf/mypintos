@@ -63,6 +63,7 @@ bool thread_mlfqs;
 
 static void kernel_thread (thread_func *, void *aux);
 
+static void add_child (struct thread *parent, struct thread *child);
 static void remove_child (struct thread *);
 
 static void idle (void *aux UNUSED);
@@ -189,7 +190,20 @@ thread_create (const char *name, int priority,
 
   t->proc_info = malloc (sizeof (struct process));
   t->proc_info->pid = t->tid;
+  list_init (&t->proc_info->sibling_list);
+
+  t->proc_info->is_terminated = false;
   t->proc_info->return_status = -1;
+
+  t->proc_info->correspond_thread = t;
+
+  sema_init (&t->proc_info->wait_sema, 0);
+  t->proc_info->wait_status = false;
+
+  sema_init (&t->proc_info->exec_sema, 0);
+  t->proc_info->load_status = false;
+
+  add_child (thread_current (), t);
 
   /* Stack frame for kernel_thread(). */
   kf = alloc_frame (t, sizeof *kf);
@@ -276,14 +290,21 @@ thread_current (void)
   return t;
 }
 
+/* Returns the running thread's tid. */
+tid_t
+thread_tid (void) 
+{
+  return thread_current ()->tid;
+}
+
 struct thread *
 find_thread_by_tid (tid_t tid)
 {
-  // enum intr_level old_level;
+  enum intr_level old_level;
 
   struct thread *result = NULL;
 
-  // old_level = intr_disable ();
+  old_level = intr_disable ();
   if (!list_empty (&all_list)) {
     struct list_elem *e;
     for (e = list_rbegin (&all_list); e != list_rend (&all_list); e = list_prev (e)) {
@@ -293,80 +314,42 @@ find_thread_by_tid (tid_t tid)
       }
     }
   }
-  // intr_set_level (old_level);
+  intr_set_level (old_level);
 
   return result;
 }
 
-struct thread *
-find_child_by_tid (struct thread *parent, tid_t tid)
-{
-  struct thread *child = parent->child;
-
-  // enum intr_level old_level;
-  
-  struct thread *result = NULL;
-
-  // old_level = intr_disable ();
-  if (child != NULL) {
-    if (child->tid == tid) {
-      result = child;
-    }
-
-    if (!list_empty (&child->sibling_list)) {
-      struct list_elem *e;
-      for (e = list_begin (&child->sibling_list); e != list_end (&child->sibling_list); e = list_next (e)) {
-        struct thread *t = list_entry (e, struct thread, sibling_elem);
-        // printf("tid: %d, name: %s\n", t->tid, t->name);
-        if (tid == t->tid) {
-          result = t;
-        }
-      }
-    }
-  }
-  // intr_set_level (old_level);
-
-  return result;
-}
-
-void
+static void
 add_child (struct thread *parent, struct thread *child) {
-  // enum intr_level old_level;
+  enum intr_level old_level;
 
-  // old_level = intr_disable ();
+  old_level = intr_disable ();
   child->parent = parent;
-  if (parent->child == NULL) {
-    parent->child = child;
+  if (parent->child_proc == NULL) {
+    parent->child_proc = child->proc_info;
   }
   else {
-    list_push_back (&parent->child->sibling_list, &child->sibling_elem);
+    list_push_back (&parent->child_proc->sibling_list, &child->sibling_elem);
   }
-  // intr_set_level (old_level);
+  intr_set_level (old_level);
 }
 
 static void
 remove_child (struct thread *t) {
-  // enum intr_level old_level;
+  enum intr_level old_level;
 
-  // old_level = intr_disable ();
-  if (t->child != NULL) {
-    struct list sibling_list = t->child->sibling_list;
-    while (!list_empty (&sibling_list)) {
-      struct thread *child = list_entry (list_pop_back (&sibling_list), 
-                                         struct thread, sibling_elem);
+  old_level = intr_disable ();
+  if (t->child_proc != NULL) {
+    while (!list_empty (&t->child_proc->sibling_list)) {
+      struct thread *child = list_entry (list_pop_back 
+                                         (&t->child_proc->sibling_list), 
+                                          struct thread, sibling_elem);
       child->parent = NULL;
     }
-    t->child->parent = NULL;
-    t->child = NULL;
+    t->child_proc->correspond_thread->parent = NULL;
+    t->child_proc = NULL;
   }
-  // intr_set_level (old_level);
-}
-
-/* Returns the running thread's tid. */
-tid_t
-thread_tid (void) 
-{
-  return thread_current ()->tid;
+  intr_set_level (old_level);
 }
 
 /* Deschedules the current thread and destroys it.  Never
@@ -388,7 +371,8 @@ thread_exit (void)
 
   struct thread *cur = thread_current ();
   remove_child (cur);
-  sema_up (&cur->wait_sema);
+  cur->proc_info->is_terminated = true;
+  sema_up (&cur->proc_info->wait_sema);
 
   thread_current ()->status = THREAD_DYING;
   schedule ();
@@ -563,15 +547,9 @@ init_thread (struct thread *t, const char *name, int priority)
   t->priority = priority;
   t->magic = THREAD_MAGIC;
 
+  t->proc_info = NULL;
   t->parent = NULL;
-  t->child = NULL;
-  list_init (&t->sibling_list);
-
-  sema_init (&t->wait_sema, 0);
-  t->wait_status = false;
-
-  sema_init (&t->exec_sema, 0);
-  t->load_status = false;
+  t->child_proc = NULL;
 
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);

@@ -98,13 +98,8 @@ struct thread
     /* Process */
     struct process *proc_info;
     struct thread *parent;
-    struct list sibling_list;
     struct list_elem sibling_elem;
-    struct thread *child;
-    struct semaphore wait_sema;
-    bool wait_status;
-    struct semaphore exec_sema;
-    bool load_status;
+    struct process *child_proc;
 
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
@@ -117,6 +112,16 @@ struct thread
 
 struct process {
     tid_t pid;
+    struct thread *correspond_thread;
+
+    struct list sibling_list;
+
+    struct semaphore wait_sema;
+    bool wait_status;
+    struct semaphore exec_sema;
+    bool load_status;
+
+    bool is_terminated;
     int return_status; 
 };
 
@@ -138,8 +143,6 @@ void thread_block (void);
 void thread_unblock (struct thread *);
 
 struct thread *find_thread_by_tid (tid_t);
-struct thread *find_child_by_tid (struct thread *parent, tid_t);
-void add_child (struct thread *parent, struct thread *child);
 
 struct thread *thread_current (void);
 tid_t thread_tid (void);

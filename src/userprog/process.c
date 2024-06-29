@@ -23,6 +23,37 @@
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
 
+static struct process *
+find_child_by_pid (struct thread *parent, tid_t pid)
+{
+  struct process *child = parent->child_proc;
+
+  // enum intr_level old_level;
+  
+  struct process *result = NULL;
+
+  // old_level = intr_disable ();
+  if (child != NULL) {
+    if (child->pid == pid) {
+      result = child;
+    }
+
+    if (!list_empty (&child->sibling_list)) {
+      struct list_elem *e;
+      for (e = list_begin (&child->sibling_list); e != list_end (&child->sibling_list); e = list_next (e)) {
+        struct thread *t = list_entry (e, struct thread, sibling_elem);
+        // printf("tid: %d, name: %s\n", t->tid, t->name);
+        if (pid == t->tid) {
+          result = t->proc_info;
+        }
+      }
+    }
+  }
+  // intr_set_level (old_level);
+
+  return result;
+}
+
 /* Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
    before process_execute() returns.  Returns the new process's
@@ -57,19 +88,23 @@ process_execute (const char *file_name)
   
   palloc_free_page (thread_copy);
 
-  struct thread *cur = thread_current ();
-  printf("name: %s, %d\n", cur->name, tid);
+  // struct thread *cur = thread_current ();
+  // printf("name: %s, %d\n", cur->name, tid);
   // load status
 
-  struct thread *child = find_thread_by_tid (tid);
-  // sema_down (&child->exec_sema);
-  // if (!child->load_status) {
+  // struct thread *child = find_thread_by_tid (tid);
+  // struct process *child_proc = child->proc_info;
+  // printf("name: %s, %d\n", child->name, child->tid);
+  // printf("return status %d\n", cur->proc_info->return_status);
+
+  // sema_down (&child_proc->exec_sema);
+  // if (!child_proc->load_status) {
+  //   free (child_proc);
   //   palloc_free_page (fn_copy); 
   //   return TID_ERROR;
   // }
   // printf("name: %s, %d\n", child->name, child->tid);
 
-  add_child (cur, child);
   return tid;
 }
 
@@ -94,7 +129,7 @@ start_process (void *file_name_)
   if (!success) 
     thread_exit ();
   
-  thread_current ()->load_status = true;
+  thread_current ()->proc_info->load_status = true;
   // sema_up (&thread_current ()->exec_sema);
 
   /* Start the user process by simulating a return from an
@@ -119,44 +154,45 @@ start_process (void *file_name_)
 int
 process_wait (tid_t child_tid UNUSED) 
 {
-  printf("wait tid: %d\n", child_tid);
+  // printf("wait tid: %d\n", child_tid);
   if (child_tid == TID_ERROR) {
     return -1;
   }
 
   struct thread *cur = thread_current ();
-  printf("child tid: %d\n", cur->child->tid);
+  // printf("child tid: %d\n", cur_proc->child->pid);
 
-  struct thread *child = find_child_by_tid (cur, child_tid);
+  struct process *child = find_child_by_pid (cur, child_tid);
   if (child == NULL || child->wait_status) {
     return -1;
   }
-
-  child->wait_status = true;
-  struct process *info = child->proc_info;
-
-  printf("before sema tid: %d\n", child->tid);
-
-  if (cur->child->tid == child_tid) {
+  
+  // printf("before sema tid: %d\n", child->pid);
+  if (cur->child_proc->pid == child->pid) {
     if (!list_empty (&child->sibling_list)) {
-      struct list_elem *next_child = list_pop_front (&child->sibling_list);
-      cur->child = list_entry (next_child, struct thread, sibling_elem);
+      struct list_elem *child_elem = list_pop_front (&child->sibling_list);
+      struct thread *next_child = list_entry (child_elem, struct thread, sibling_elem);
+      cur->child_proc = next_child->proc_info;
     }
     else {
-      cur->child = NULL;
+      cur->child_proc = NULL;
     }
-    child->parent = NULL;
+    child->correspond_thread->parent = NULL;
   }
   else {
-    list_remove (&child->sibling_elem);
+    list_remove (&child->correspond_thread->sibling_elem);
   }
-  sema_down (&child->wait_sema);
+  
+  if (!child->is_terminated) {
+    child->wait_status = true;
+    sema_down (&child->wait_sema);
+  }
 
   // printf("after sema tid: %d\n", info->pid);
   // printf("return status: %d\n", info->return_status);
   
-  int status = info->return_status;
-  free (info);
+  int status = child->return_status;
+  free (child);
   return status;
 }
 
