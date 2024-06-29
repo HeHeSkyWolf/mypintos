@@ -65,6 +65,18 @@ find_file_by_fd (struct process *p, int fd)
   }
   return NULL;
 }
+
+static void
+close_all_opened_file (struct process *p) {
+  if (!list_empty (&p->file_opened_list)) {
+    while (!list_empty (&p->file_opened_list)) {
+      struct list_elem *e = list_pop_front (&p->file_opened_list);
+      struct file_open *f_opened = list_entry (e, struct file_open, file_elem);
+      file_close (f_opened->file);
+      free (f_opened);
+    }
+  }
+}
 	
 /* Reads a byte at user virtual address UADDR.
    UADDR must be below PHYS_BASE.
@@ -106,9 +118,11 @@ copy_in  (void *dst_, const void *usrc_, size_t size)
 static void
 kernel_exit (int status)
 {
-  struct thread *t = thread_current ();
-  printf("%s: exit(%d)\n", t->name, status);
-  t->proc_info->return_status = status;
+  struct thread *cur = thread_current ();
+
+  printf("%s: exit(%d)\n", cur->name, status);
+  cur->proc_info->return_status = status;
+  close_all_opened_file (cur->proc_info);
   thread_exit ();
 }
 
@@ -128,6 +142,7 @@ syscall_exit (struct intr_frame *f UNUSED)
   printf("%s: exit(%d)\n", cur->name, status);
   cur->proc_info->return_status = status;
   f->eax = status;
+  close_all_opened_file (cur->proc_info);
   thread_exit ();
 }
 
