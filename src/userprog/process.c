@@ -545,8 +545,8 @@ setup_stack (const char *file_name, void **esp)
         
         // printf("word align %d\n", argv_len % 4);
         *esp -= 4 - (argv_len % 4);
-        *esp -= NULL_POINTER_SENTINEL;
-        int align_len = (4 - (argv_len % 4)) + NULL_POINTER_SENTINEL;
+        *esp -= 4;
+        int align_len = 8 - (argv_len % 4);
         *esp -= sizeof(uintptr_t) * argc;
 
         fn_copy = palloc_get_page (0);
