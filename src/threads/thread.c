@@ -188,21 +188,21 @@ thread_create (const char *name, int priority,
   init_thread (t, name, priority);
   tid = t->tid = allocate_tid ();
 
-  t->proc_info = malloc (sizeof (struct process));
-  t->proc_info->pid = t->tid;
-  list_init (&t->proc_info->sibling_list);
-  list_init (&t->proc_info->file_opened_list);
+  t->process = malloc (sizeof (struct process));
+  t->process->pid = t->tid;
+  list_init (&t->process->sibling_list);
+  list_init (&t->process->file_opened_list);
 
-  t->proc_info->is_terminated = false;
-  t->proc_info->return_status = -1;
+  t->process->is_terminated = false;
+  t->process->return_status = -1;
 
-  t->proc_info->correspond_thread = t;
+  t->process->correspond_thread = t;
 
-  sema_init (&t->proc_info->wait_sema, 0);
-  t->proc_info->wait_status = false;
+  sema_init (&t->process->wait_sema, 0);
+  t->process->wait_status = false;
 
-  sema_init (&t->proc_info->exec_sema, 0);
-  t->proc_info->load_status = false;
+  sema_init (&t->process->exec_sema, 0);
+  t->process->load_status = false;
 
   add_child (thread_current (), t);
 
@@ -327,10 +327,10 @@ add_child (struct thread *parent, struct thread *child) {
   old_level = intr_disable ();
   child->parent = parent;
   if (parent->child_proc == NULL) {
-    parent->child_proc = child->proc_info;
+    parent->child_proc = child->process;
   }
   else {
-    list_push_back (&parent->child_proc->sibling_list, &child->proc_info->sibling_elem);
+    list_push_back (&parent->child_proc->sibling_list, &child->process->sibling_elem);
   }
   intr_set_level (old_level);
 }
@@ -372,8 +372,8 @@ thread_exit (void)
 
   struct thread *cur = thread_current ();
   remove_child (cur);
-  cur->proc_info->is_terminated = true;
-  sema_up (&cur->proc_info->wait_sema);
+  cur->process->is_terminated = true;
+  sema_up (&cur->process->wait_sema);
 
   thread_current ()->status = THREAD_DYING;
   schedule ();
@@ -548,7 +548,7 @@ init_thread (struct thread *t, const char *name, int priority)
   t->priority = priority;
   t->magic = THREAD_MAGIC;
 
-  t->proc_info = NULL;
+  t->process = NULL;
   t->parent = NULL;
   t->child_proc = NULL;
   t->next_fd = 2;

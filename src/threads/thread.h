@@ -96,7 +96,7 @@ struct thread
     struct list_elem elem;              /* List element. */
 
     /* Process */
-    struct process *proc_info;
+    struct process *process;
     struct thread *parent;
     struct process *child_proc;
 

@@ -93,9 +93,9 @@ process_execute (const char *file_name)
   // load status
 
   struct process *child_proc = find_child_by_pid (cur, tid);
-  // struct process *child_proc = child->proc_info;
+  // struct process *child_proc = child->process;
   // printf("name: %s, %d\n", child->name, child->tid);
-  // printf("return status %d\n", cur->proc_info->return_status);
+  // printf("return status %d\n", cur->process->return_status);
 
   sema_down (&child_proc->exec_sema);
   if (!child_proc->load_status) {
@@ -127,12 +127,12 @@ start_process (void *file_name_)
   /* If load failed, quit. */
   palloc_free_page (file_name);
   if (!success) {
-    sema_up (&thread_current ()->proc_info->exec_sema);
+    sema_up (&thread_current ()->process->exec_sema);
     thread_exit ();
   }
   
-  thread_current ()->proc_info->load_status = true;
-  sema_up (&thread_current ()->proc_info->exec_sema);
+  thread_current ()->process->load_status = true;
+  sema_up (&thread_current ()->process->exec_sema);
 
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in

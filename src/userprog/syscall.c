@@ -4,13 +4,17 @@
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 
+#include <string.h>
+#include "devices/shutdown.h"
+#include "devices/input.h"
 #include "threads/malloc.h"
 #include "threads/vaddr.h"
 #include "userprog/pagedir.h"
-#include "devices/shutdown.h"
 #include "userprog/process.h"
 #include "filesys/file.h"
 #include "filesys/filesys.h"
+
+static struct lock syscall_lock;
 
 static void syscall_handler (struct intr_frame *);
 
@@ -22,16 +26,18 @@ static void syscall_wait (struct intr_frame *);
 static void syscall_create (struct intr_frame *);
 static void syscall_remove (struct intr_frame *);
 static void syscall_open (struct intr_frame *);
-
+static void syscall_filesize (struct intr_frame *);
+static void syscall_read (struct intr_frame *);
 static void syscall_write (struct intr_frame *);
-
-
+static void syscall_seek (struct intr_frame *);
+static void syscall_tell (struct intr_frame *);
 static void syscall_close (struct intr_frame *);
 
 
 void
 syscall_init (void) 
 {
+  lock_init (&syscall_lock);
   intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
 }
 
@@ -121,8 +127,8 @@ kernel_exit (int status)
   struct thread *cur = thread_current ();
 
   printf("%s: exit(%d)\n", cur->name, status);
-  cur->proc_info->return_status = status;
-  close_all_opened_file (cur->proc_info);
+  cur->process->return_status = status;
+  close_all_opened_file (cur->process);
   thread_exit ();
 }
 
@@ -140,9 +146,9 @@ syscall_exit (struct intr_frame *f UNUSED)
   
   struct thread *cur = thread_current ();
   printf("%s: exit(%d)\n", cur->name, status);
-  cur->proc_info->return_status = status;
+  cur->process->return_status = status;
   f->eax = status;
-  close_all_opened_file (cur->proc_info);
+  close_all_opened_file (cur->process);
   thread_exit ();
 }
 
@@ -219,6 +225,7 @@ syscall_open (struct intr_frame *f UNUSED)
   const char *file_name = (const char *) args[0];
 
   struct file *file = filesys_open (file_name);
+
   if (file == NULL) {
     f->eax = -1;
   } else {
@@ -227,14 +234,68 @@ syscall_open (struct intr_frame *f UNUSED)
     struct file_open *f_open = malloc (sizeof (struct file_open));
     f_open->fd = cur->next_fd;
     f_open->file = file;
-    list_push_back (&cur->proc_info->file_opened_list, &f_open->file_elem);
-    // printf("%d\n", f_open->fd);
+
+    list_push_back (&cur->process->file_opened_list, &f_open->file_elem);
     f->eax = f_open->fd;
   } 
 }
 
 static void
-syscall_write (struct intr_frame *f UNUSED) {
+syscall_filesize (struct intr_frame *f UNUSED)
+{
+  int args[1];
+  copy_in (args, (uint32_t *) f->esp + 1, sizeof *args);
+  int fd = (int) args[0];
+  
+  lock_acquire (&syscall_lock);
+  struct file_open *f_opened = find_file_by_fd (thread_current()->process, fd);
+  if (f_opened == NULL) {
+    f->eax = 0;
+    lock_release (&syscall_lock);
+    return;
+  }
+  f->eax = file_length (f_opened->file);
+  lock_release (&syscall_lock);
+}
+
+static void
+syscall_read (struct intr_frame *f UNUSED)
+{
+  int args[3];
+  copy_in (args, (uint32_t *) f->esp + 1, sizeof *args * 3);
+
+  int fd = (int) args[0];
+  // check buffer is valid before entering lock or no?
+  void *buffer = (void *) args[1];
+  unsigned size = (unsigned) args[2];
+
+  valid_uaddr (buffer);
+
+  lock_acquire (&syscall_lock);
+  if (fd == STDIN_FILENO) {
+    char *keyboard_input = "";
+    for (int i = 0; i < args[2]; i++) {
+      char key = input_getc ();
+      strlcat (keyboard_input, &key, size + 1);
+    }
+    memcpy (buffer, keyboard_input, size);
+    f->eax = size;
+  }
+  else {
+    struct file_open *f_opened = find_file_by_fd (thread_current()->process, fd);
+    if (f_opened == NULL) {
+      kernel_exit (-1);
+      lock_release (&syscall_lock);
+      return;
+    }
+    f->eax = file_read (f_opened->file, buffer, size);
+  }
+  lock_release (&syscall_lock);
+}
+
+static void
+syscall_write (struct intr_frame *f UNUSED)
+{
   int args[3];
   copy_in (args, (uint32_t *) f->esp + 1, sizeof *args * 3);
 
@@ -243,12 +304,66 @@ syscall_write (struct intr_frame *f UNUSED) {
   // printf ("   ***size: %u\n", args[2]);
   
   int fd = (int) args[0];
-  if (fd == 1) {
+  void *buffer = (void *) args[1];
+  unsigned size = (unsigned) args[2];
+
+  valid_uaddr (buffer);
+
+  lock_acquire (&syscall_lock);
+  if (fd == STDOUT_FILENO) {
     // execute the write on STDOUT_FILENO
-    putbuf ((const char *)args[1], (size_t) args[2]);
+    putbuf (buffer, size);
     // set the returned value
-    f->eax = args[2];
+    f->eax = size;
   }
+  else {
+    struct file_open *f_opened = find_file_by_fd (thread_current()->process, fd);
+    if (f_opened == NULL) {
+      kernel_exit (-1);
+      lock_release (&syscall_lock);
+      return;
+    }
+    f->eax = file_write (f_opened->file, buffer, size);
+  }
+  lock_release (&syscall_lock);
+}
+
+static void
+syscall_seek (struct intr_frame *f UNUSED)
+{
+  int args[2];
+  copy_in (args, (uint32_t *) f->esp + 1, sizeof *args * 2);
+
+  int fd = (int) args[0];
+  unsigned position = (unsigned) args[1];
+
+  lock_acquire (&syscall_lock);
+  struct file_open *f_opened = find_file_by_fd (thread_current()->process, fd);
+  if (f_opened == NULL) {
+    lock_release (&syscall_lock);
+    return;
+  }
+  file_seek (f_opened->file, position);
+  lock_release (&syscall_lock);
+}
+
+static void
+syscall_tell (struct intr_frame *f UNUSED)
+{
+  int args[1];
+  copy_in (args, (uint32_t *) f->esp + 1, sizeof *args);
+
+  int fd = (int) args[0];
+
+  lock_acquire (&syscall_lock);
+  struct file_open *f_opened = find_file_by_fd (thread_current()->process, fd);
+  if (f_opened == NULL) {
+    f->eax = 0;
+    lock_release (&syscall_lock);
+    return;
+  }
+  f->eax = file_tell (f_opened->file);
+  lock_release (&syscall_lock);
 }
 
 static void
@@ -259,7 +374,7 @@ syscall_close (struct intr_frame *f UNUSED)
   int fd = (int) args[0];
 
   struct thread *cur = thread_current ();
-  struct file_open *f_opened = find_file_by_fd (cur->proc_info, fd);
+  struct file_open *f_opened = find_file_by_fd (cur->process, fd);
   if (f_opened != NULL) {
     list_remove (&f_opened->file_elem);
     file_close (f_opened->file);
@@ -303,15 +418,19 @@ syscall_handler (struct intr_frame *f UNUSED)
       syscall_open (f);
       break;
     case SYS_FILESIZE:
+      syscall_filesize (f);
       break;
     case SYS_READ:
+      syscall_read (f);
       break;
     case SYS_WRITE:
       syscall_write (f);
       break;
     case SYS_SEEK:
+      syscall_seek (f);
       break;
     case SYS_TELL:
+      syscall_tell (f);
       break;
     case SYS_CLOSE:
       syscall_close (f);
