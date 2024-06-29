@@ -58,8 +58,17 @@ process_execute (const char *file_name)
   palloc_free_page (thread_copy);
 
   struct thread *cur = thread_current ();
-  // printf("name: %s, %d\n", cur->name, tid);
+  printf("name: %s, %d\n", cur->name, tid);
+  // load status
+
   struct thread *child = find_thread_by_tid (tid);
+  // sema_down (&child->exec_sema);
+  // if (!child->load_status) {
+  //   palloc_free_page (fn_copy); 
+  //   return TID_ERROR;
+  // }
+  // printf("name: %s, %d\n", child->name, child->tid);
+
   add_child (cur, child);
   return tid;
 }
@@ -84,6 +93,9 @@ start_process (void *file_name_)
   palloc_free_page (file_name);
   if (!success) 
     thread_exit ();
+  
+  thread_current ()->load_status = true;
+  // sema_up (&thread_current ()->exec_sema);
 
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
@@ -107,12 +119,45 @@ start_process (void *file_name_)
 int
 process_wait (tid_t child_tid UNUSED) 
 {
-  struct thread *child = find_child_by_tid (child_tid);
-  if (child == NULL) {
+  printf("wait tid: %d\n", child_tid);
+  if (child_tid == TID_ERROR) {
     return -1;
   }
+
+  struct thread *cur = thread_current ();
+  printf("child tid: %d\n", cur->child->tid);
+
+  struct thread *child = find_child_by_tid (cur, child_tid);
+  if (child == NULL || child->wait_status) {
+    return -1;
+  }
+
+  child->wait_status = true;
+  struct process *info = child->proc_info;
+
+  printf("before sema tid: %d\n", child->tid);
+
+  if (cur->child->tid == child_tid) {
+    if (!list_empty (&child->sibling_list)) {
+      struct list_elem *next_child = list_pop_front (&child->sibling_list);
+      cur->child = list_entry (next_child, struct thread, sibling_elem);
+    }
+    else {
+      cur->child = NULL;
+    }
+    child->parent = NULL;
+  }
+  else {
+    list_remove (&child->sibling_elem);
+  }
   sema_down (&child->wait_sema);
-  return child->return_status;
+
+  // printf("after sema tid: %d\n", info->pid);
+  // printf("return status: %d\n", info->return_status);
+  
+  int status = info->return_status;
+  free (info);
+  return status;
 }
 
 /* Free the current process's resources. */

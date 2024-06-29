@@ -96,12 +96,15 @@ struct thread
     struct list_elem elem;              /* List element. */
 
     /* Process */
+    struct process *proc_info;
     struct thread *parent;
     struct list sibling_list;
     struct list_elem sibling_elem;
     struct thread *child;
     struct semaphore wait_sema;
-    int return_status;
+    bool wait_status;
+    struct semaphore exec_sema;
+    bool load_status;
 
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
@@ -111,6 +114,11 @@ struct thread
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */
   };
+
+struct process {
+    tid_t pid;
+    int return_status; 
+};
 
 /* If false (default), use round-robin scheduler.
    If true, use multi-level feedback queue scheduler.
@@ -130,7 +138,7 @@ void thread_block (void);
 void thread_unblock (struct thread *);
 
 struct thread *find_thread_by_tid (tid_t);
-struct thread *find_child_by_tid (tid_t);
+struct thread *find_child_by_tid (struct thread *parent, tid_t);
 void add_child (struct thread *parent, struct thread *child);
 
 struct thread *thread_current (void);

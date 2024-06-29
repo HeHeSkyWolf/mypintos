@@ -15,6 +15,8 @@
 #include "userprog/process.h"
 #endif
 
+#include "threads/malloc.h"
+
 /* Random value for struct thread's `magic' member.
    Used to detect stack overflow.  See the big comment at the top
    of thread.h for details. */
@@ -60,6 +62,8 @@ static unsigned thread_ticks;   /* # of timer ticks since last yield. */
 bool thread_mlfqs;
 
 static void kernel_thread (thread_func *, void *aux);
+
+static void remove_child (struct thread *);
 
 static void idle (void *aux UNUSED);
 static struct thread *running_thread (void);
@@ -183,6 +187,10 @@ thread_create (const char *name, int priority,
   init_thread (t, name, priority);
   tid = t->tid = allocate_tid ();
 
+  t->proc_info = malloc (sizeof (struct process));
+  t->proc_info->pid = t->tid;
+  t->proc_info->return_status = -1;
+
   /* Stack frame for kernel_thread(). */
   kf = alloc_frame (t, sizeof *kf);
   kf->eip = NULL;
@@ -271,44 +279,61 @@ thread_current (void)
 struct thread *
 find_thread_by_tid (tid_t tid)
 {
+  // enum intr_level old_level;
+
+  struct thread *result = NULL;
+
+  // old_level = intr_disable ();
   if (!list_empty (&all_list)) {
     struct list_elem *e;
     for (e = list_rbegin (&all_list); e != list_rend (&all_list); e = list_prev (e)) {
       struct thread *t = list_entry (e, struct thread, allelem);
       if (tid == t->tid) {
-        return t;
+        result = t;
       }
     }
   }
-  return NULL;
+  // intr_set_level (old_level);
+
+  return result;
 }
 
 struct thread *
-find_child_by_tid (tid_t tid)
+find_child_by_tid (struct thread *parent, tid_t tid)
 {
-  struct thread *cur = thread_current ();
-  struct thread *child = cur->child;
+  struct thread *child = parent->child;
+
+  // enum intr_level old_level;
+  
+  struct thread *result = NULL;
+
+  // old_level = intr_disable ();
   if (child != NULL) {
     if (child->tid == tid) {
-      return child;
+      result = child;
     }
 
     if (!list_empty (&child->sibling_list)) {
       struct list_elem *e;
       for (e = list_begin (&child->sibling_list); e != list_end (&child->sibling_list); e = list_next (e)) {
         struct thread *t = list_entry (e, struct thread, sibling_elem);
-        printf("tid: %d, name: %s\n", t->tid, t->name);
+        // printf("tid: %d, name: %s\n", t->tid, t->name);
         if (tid == t->tid) {
-          return t;
+          result = t;
         }
       }
     }
   }
-  return NULL;
+  // intr_set_level (old_level);
+
+  return result;
 }
 
 void
 add_child (struct thread *parent, struct thread *child) {
+  // enum intr_level old_level;
+
+  // old_level = intr_disable ();
   child->parent = parent;
   if (parent->child == NULL) {
     parent->child = child;
@@ -316,6 +341,25 @@ add_child (struct thread *parent, struct thread *child) {
   else {
     list_push_back (&parent->child->sibling_list, &child->sibling_elem);
   }
+  // intr_set_level (old_level);
+}
+
+static void
+remove_child (struct thread *t) {
+  // enum intr_level old_level;
+
+  // old_level = intr_disable ();
+  if (t->child != NULL) {
+    struct list sibling_list = t->child->sibling_list;
+    while (!list_empty (&sibling_list)) {
+      struct thread *child = list_entry (list_pop_back (&sibling_list), 
+                                         struct thread, sibling_elem);
+      child->parent = NULL;
+    }
+    t->child->parent = NULL;
+    t->child = NULL;
+  }
+  // intr_set_level (old_level);
 }
 
 /* Returns the running thread's tid. */
@@ -335,12 +379,17 @@ thread_exit (void)
 #ifdef USERPROG
   process_exit ();
 #endif
-
+  
   /* Remove thread from all threads list, set our status to dying,
      and schedule another process.  That process will destroy us
      when it calls thread_schedule_tail(). */
   intr_disable ();
   list_remove (&thread_current()->allelem);
+
+  struct thread *cur = thread_current ();
+  remove_child (cur);
+  sema_up (&cur->wait_sema);
+
   thread_current ()->status = THREAD_DYING;
   schedule ();
   NOT_REACHED ();
@@ -514,11 +563,15 @@ init_thread (struct thread *t, const char *name, int priority)
   t->priority = priority;
   t->magic = THREAD_MAGIC;
 
-  t->return_status = -1;
   t->parent = NULL;
   t->child = NULL;
   list_init (&t->sibling_list);
+
   sema_init (&t->wait_sema, 0);
+  t->wait_status = false;
+
+  sema_init (&t->exec_sema, 0);
+  t->load_status = false;
 
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);
