@@ -4,10 +4,12 @@
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 
+#include "threads/malloc.h"
 #include "threads/vaddr.h"
 #include "userprog/pagedir.h"
 #include "devices/shutdown.h"
 #include "userprog/process.h"
+#include "filesys/file.h"
 #include "filesys/filesys.h"
 
 static void syscall_handler (struct intr_frame *);
@@ -23,6 +25,8 @@ static void syscall_open (struct intr_frame *);
 
 static void syscall_write (struct intr_frame *);
 
+
+static void syscall_close (struct intr_frame *);
 
 
 void
@@ -45,6 +49,21 @@ valid_uaddr (const void *uaddr)
   struct thread *t = thread_current ();
   if (pagedir_get_page (t->pagedir, uaddr) == NULL)
     kernel_exit (-1);
+}
+
+static struct file_open *
+find_file_by_fd (struct process *p, int fd)
+{
+  if (!list_empty (&p->file_opened_list)) {
+    struct list_elem *e;
+    for (e = list_begin (&p->file_opened_list); e != list_end (&p->file_opened_list); e = list_next (e)) {
+      struct file_open *f_opened = list_entry (e, struct file_open, file_elem);
+      if (f_opened->fd == fd) {
+        return f_opened;
+      }
+    }
+  }
+  return NULL;
 }
 	
 /* Reads a byte at user virtual address UADDR.
@@ -164,7 +183,7 @@ static void
 syscall_remove (struct intr_frame *f UNUSED)
 {
   int args[1];
-  copy_in (args, (uint32_t *) f->esp + 1, sizeof *args * 2);
+  copy_in (args, (uint32_t *) f->esp + 1, sizeof *args);
 
   valid_uaddr ((void *) args[0]);
 
@@ -178,15 +197,25 @@ static void
 syscall_open (struct intr_frame *f UNUSED)
 {
   int args[1];
-  copy_in (args, (uint32_t *) f->esp + 1, sizeof *args * 2);
+  copy_in (args, (uint32_t *) f->esp + 1, sizeof *args);
 
   valid_uaddr ((void *) args[0]);
 
-  // const char *file_name = (const char *) args[0];
+  const char *file_name = (const char *) args[0];
 
-  // struct file *file = filesys_open (file_name);
-  // printf("%u\n",);
-  f->eax = 20;
+  struct file *file = filesys_open (file_name);
+  if (file == NULL) {
+    f->eax = -1;
+  } else {
+    struct thread *cur = thread_current ();
+    cur->next_fd += 1;
+    struct file_open *f_open = malloc (sizeof (struct file_open));
+    f_open->fd = cur->next_fd;
+    f_open->file = file;
+    list_push_back (&cur->proc_info->file_opened_list, &f_open->file_elem);
+    // printf("%d\n", f_open->fd);
+    f->eax = f_open->fd;
+  } 
 }
 
 static void
@@ -204,6 +233,22 @@ syscall_write (struct intr_frame *f UNUSED) {
     putbuf ((const char *)args[1], (size_t) args[2]);
     // set the returned value
     f->eax = args[2];
+  }
+}
+
+static void
+syscall_close (struct intr_frame *f UNUSED)
+{
+  int args[1];
+  copy_in (args, (uint32_t *) f->esp + 1, sizeof *args);
+  int fd = (int) args[0];
+
+  struct thread *cur = thread_current ();
+  struct file_open *f_opened = find_file_by_fd (cur->proc_info, fd);
+  if (f_opened != NULL) {
+    list_remove (&f_opened->file_elem);
+    file_close (f_opened->file);
+    free (f_opened);
   }
 }
 
@@ -248,6 +293,13 @@ syscall_handler (struct intr_frame *f UNUSED)
       break;
     case SYS_WRITE:
       syscall_write (f);
+      break;
+    case SYS_SEEK:
+      break;
+    case SYS_TELL:
+      break;
+    case SYS_CLOSE:
+      syscall_close (f);
       break;
     default:
       /* kill process like this? sc-boundary-3 */

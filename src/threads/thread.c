@@ -191,6 +191,7 @@ thread_create (const char *name, int priority,
   t->proc_info = malloc (sizeof (struct process));
   t->proc_info->pid = t->tid;
   list_init (&t->proc_info->sibling_list);
+  list_init (&t->proc_info->file_opened_list);
 
   t->proc_info->is_terminated = false;
   t->proc_info->return_status = -1;
@@ -550,6 +551,7 @@ init_thread (struct thread *t, const char *name, int priority)
   t->proc_info = NULL;
   t->parent = NULL;
   t->child_proc = NULL;
+  t->next_fd = 2;
 
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);

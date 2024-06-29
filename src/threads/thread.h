@@ -100,6 +100,9 @@ struct thread
     struct thread *parent;
     struct process *child_proc;
 
+    /* File */
+    int next_fd;
+
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory. */
@@ -121,8 +124,16 @@ struct process {
     struct semaphore exec_sema;
     bool load_status;
 
+    struct list file_opened_list;
+
     bool is_terminated;
     int return_status; 
+};
+
+struct file_open {
+   int fd;
+   struct file *file;
+   struct list_elem file_elem;
 };
 
 /* If false (default), use round-robin scheduler.
