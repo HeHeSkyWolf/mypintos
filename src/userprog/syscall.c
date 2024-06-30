@@ -18,7 +18,11 @@ static struct lock syscall_lock;
 
 static void syscall_handler (struct intr_frame *);
 
-static void kernel_exit (int status);
+static void valid_uaddr (const void *uaddr);
+void kernel_exit (int status);
+static struct file_open *find_file_by_fd (struct process *, int fd);
+static void close_all_opened_file (struct process *);
+static int get_user (const uint8_t *uaddr);
 static void syscall_halt (void);
 static void syscall_exit (struct intr_frame *);
 static void syscall_exec (struct intr_frame *);
@@ -73,7 +77,8 @@ find_file_by_fd (struct process *p, int fd)
 }
 
 static void
-close_all_opened_file (struct process *p) {
+close_all_opened_file (struct process *p)
+{
   if (!list_empty (&p->file_opened_list)) {
     while (!list_empty (&p->file_opened_list)) {
       struct list_elem *e = list_pop_front (&p->file_opened_list);
@@ -117,14 +122,20 @@ copy_in  (void *dst_, const void *usrc_, size_t size)
 
   valid_uaddr(usrc);
 
-  for (; size > 0; size--, dst++, usrc++)
+  for (; size > 0; size--, dst++, usrc++) {
+    valid_uaddr(usrc);
     *dst = get_user (usrc);
+  }
 }
 
-static void
+void
 kernel_exit (int status)
 {
   struct thread *cur = thread_current ();
+
+  // printf("tid: %d\n", cur->process->pid);
+  // printf("is_terminated: %d\n", cur->process->is_terminated);
+
 
   printf("%s: exit(%d)\n", cur->name, status);
   cur->process->return_status = status;
@@ -157,7 +168,7 @@ syscall_exec (struct intr_frame *f UNUSED) {
   int args[1];
   copy_in (args, (uint32_t *) f->esp + 1, sizeof *args);
   
-  valid_uaddr ((void *) args[0]);
+  valid_uaddr ((char *) args[0]);
 
   const char *cmd_line = (const char *) args[0];
 
@@ -386,14 +397,8 @@ static void
 syscall_handler (struct intr_frame *f UNUSED) 
 {
   unsigned int syscall_nr;
-  // int args[3];
-
-  // extract syscall number
   copy_in (&syscall_nr, f->esp, sizeof syscall_nr);
   // printf ("   ***syscall number: %u\n", syscall_nr);
-
-  // extract 3 arguments, fd means file descripter
-  // copy_in (args, (uint32_t *) f->esp + 1, sizeof *args * 3);
 
   switch (syscall_nr) {
     case SYS_HALT:

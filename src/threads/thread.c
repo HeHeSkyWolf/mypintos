@@ -64,7 +64,7 @@ bool thread_mlfqs;
 static void kernel_thread (thread_func *, void *aux);
 
 static void add_child (struct thread *parent, struct thread *child);
-static void remove_child (struct thread *);
+static void free_process (struct thread *);
 
 static void idle (void *aux UNUSED);
 static struct thread *running_thread (void);
@@ -336,7 +336,7 @@ add_child (struct thread *parent, struct thread *child) {
 }
 
 static void
-remove_child (struct thread *t) {
+free_process (struct thread *t) {
   enum intr_level old_level;
 
   old_level = intr_disable ();
@@ -345,10 +345,23 @@ remove_child (struct thread *t) {
       struct process *child = list_entry (list_pop_back 
                                          (&t->child_proc->sibling_list), 
                                           struct process, sibling_elem);
-      child->correspond_thread->parent = NULL;
+      if (!child->is_terminated) {
+        child->correspond_thread->parent = NULL;
+      }
+      else {
+        free (child);
+      }
     }
-    t->child_proc->correspond_thread->parent = NULL;
-    t->child_proc = NULL;
+    if (!t->child_proc->is_terminated) {
+      t->child_proc->correspond_thread->parent = NULL;
+    }
+    else {
+      free (t->child_proc);
+    }
+  }
+
+  if (t->parent == NULL) {
+    free (t->process);
   }
   intr_set_level (old_level);
 }
@@ -371,7 +384,7 @@ thread_exit (void)
   list_remove (&thread_current()->allelem);
 
   struct thread *cur = thread_current ();
-  remove_child (cur);
+  free_process (cur);
   cur->process->is_terminated = true;
   sema_up (&cur->process->wait_sema);
 

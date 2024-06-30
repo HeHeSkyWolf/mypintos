@@ -19,9 +19,12 @@
 #include "threads/vaddr.h" 
 
 #include "threads/malloc.h"
+#include "userprog/syscall.h"
 
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
+
+static struct process *find_child_by_pid (struct thread *parent, tid_t pid);
 
 static struct process *
 find_child_by_pid (struct thread *parent, tid_t pid)
@@ -61,6 +64,8 @@ find_child_by_pid (struct thread *parent, tid_t pid)
 tid_t
 process_execute (const char *file_name) 
 {
+  // printf("process execute\n");
+
   char *fn_copy;
   tid_t tid;
 
@@ -99,8 +104,6 @@ process_execute (const char *file_name)
 
   sema_down (&child_proc->exec_sema);
   if (!child_proc->load_status) {
-    free (child_proc);
-    palloc_free_page (fn_copy); 
     return TID_ERROR;
   }
   // printf("name: %s, %d\n", child->name, child->tid);
@@ -128,7 +131,7 @@ start_process (void *file_name_)
   palloc_free_page (file_name);
   if (!success) {
     sema_up (&thread_current ()->process->exec_sema);
-    thread_exit ();
+    kernel_exit (-1);
   }
   
   thread_current ()->process->load_status = true;
@@ -156,6 +159,7 @@ start_process (void *file_name_)
 int
 process_wait (tid_t child_tid UNUSED) 
 {
+  // printf("process wait\n");
   // printf("wait tid: %d\n", child_tid);
   if (child_tid == TID_ERROR) {
     return -1;
@@ -172,14 +176,13 @@ process_wait (tid_t child_tid UNUSED)
   // printf("before sema tid: %d\n", child->pid);
   if (cur->child_proc->pid == child->pid) {
     if (!list_empty (&child->sibling_list)) {
-      struct list_elem *child_elem = list_pop_front (&child->sibling_list);
-      struct process *next_child = list_entry (child_elem, struct process, sibling_elem);
+      struct list_elem *elem = list_pop_front (&child->sibling_list);
+      struct process *next_child = list_entry (elem, struct process, sibling_elem);
       cur->child_proc = next_child;
     }
     else {
       cur->child_proc = NULL;
     }
-    child->correspond_thread->parent = NULL;
   }
   else {
     list_remove (&child->sibling_elem);
@@ -190,8 +193,8 @@ process_wait (tid_t child_tid UNUSED)
     sema_down (&child->wait_sema);
   }
 
-  // printf("after sema tid: %d\n", info->pid);
-  // printf("return status: %d\n", info->return_status);
+  // printf("after sema tid: %d\n", child->pid);
+  // printf("return status: %d\n", child->return_status);
   
   int status = child->return_status;
   free (child);
@@ -424,6 +427,8 @@ load (const char *file_name, void (**eip) (void), void **esp)
 
   /* Start address. */
   *eip = (void (*) (void)) ehdr.e_entry;
+
+  file_deny_write (file);
 
   success = true;
 
