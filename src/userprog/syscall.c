@@ -140,6 +140,7 @@ kernel_exit (int status)
   printf("%s: exit(%d)\n", cur->name, status);
   cur->process->return_status = status;
   close_all_opened_file (cur->process);
+  file_close (cur->running_file);
   thread_exit ();
 }
 
@@ -160,6 +161,7 @@ syscall_exit (struct intr_frame *f UNUSED)
   cur->process->return_status = status;
   f->eax = status;
   close_all_opened_file (cur->process);
+  file_close (cur->running_file);
   thread_exit ();
 }
 
@@ -295,9 +297,8 @@ syscall_read (struct intr_frame *f UNUSED)
   else {
     struct file_open *f_opened = find_file_by_fd (thread_current()->process, fd);
     if (f_opened == NULL) {
-      kernel_exit (-1);
       lock_release (&syscall_lock);
-      return;
+      kernel_exit (-1);
     }
     f->eax = file_read (f_opened->file, buffer, size);
   }
@@ -330,9 +331,8 @@ syscall_write (struct intr_frame *f UNUSED)
   else {
     struct file_open *f_opened = find_file_by_fd (thread_current()->process, fd);
     if (f_opened == NULL) {
-      kernel_exit (-1);
       lock_release (&syscall_lock);
-      return;
+      kernel_exit (-1);
     }
     f->eax = file_write (f_opened->file, buffer, size);
   }

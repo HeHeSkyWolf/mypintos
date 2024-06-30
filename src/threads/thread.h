@@ -102,6 +102,7 @@ struct thread
 
     /* File */
     int next_fd;
+    struct file *running_file;
 
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
