@@ -48,8 +48,6 @@ syscall_init (void)
 static void
 valid_uaddr (const void *uaddr)
 {
-  /* do i need to check all args address? */
-
   if (!is_user_vaddr(uaddr))
     kernel_exit (-1);
 
@@ -133,14 +131,12 @@ kernel_exit (int status)
 {
   struct thread *cur = thread_current ();
 
-  // printf("tid: %d\n", cur->process->pid);
-  // printf("is_terminated: %d\n", cur->process->is_terminated);
-
-
   printf("%s: exit(%d)\n", cur->name, status);
+  
   cur->process->return_status = status;
   close_all_opened_file (cur->process);
   file_close (cur->running_file);
+  
   thread_exit ();
 }
 
@@ -157,11 +153,13 @@ syscall_exit (struct intr_frame *f UNUSED)
   int status = (int) args[0];
   
   struct thread *cur = thread_current ();
+
   printf("%s: exit(%d)\n", cur->name, status);
   cur->process->return_status = status;
   f->eax = status;
   close_all_opened_file (cur->process);
   file_close (cur->running_file);
+  
   thread_exit ();
 }
 
@@ -169,13 +167,11 @@ static void
 syscall_exec (struct intr_frame *f UNUSED) {
   int args[1];
   copy_in (args, (uint32_t *) f->esp + 1, sizeof *args);
-  
   valid_uaddr ((char *) args[0]);
 
   const char *cmd_line = (const char *) args[0];
 
   tid_t tid = process_execute (cmd_line);
-  // printf("tid: %d\n", tid);
   f->eax = tid;
 }
 
@@ -184,10 +180,6 @@ syscall_wait (struct intr_frame *f UNUSED) {
   int args[1];
   copy_in (args, (uint32_t *) f->esp + 1, sizeof *args);
   tid_t tid = (tid_t) args[0];
-
-  // struct thread *cur = thread_current ();
-  // printf("current thread: %s\n", cur->name);
-  // printf("tid in wait: %d\n", tid);
 
   int status = process_wait (tid);
   f->eax = status;
@@ -198,16 +190,10 @@ syscall_create (struct intr_frame *f UNUSED)
 {
   int args[2];
   copy_in (args, (uint32_t *) f->esp + 1, sizeof *args * 2);
-
-  // printf ("   ***fd: %p\n", (void *) args[0]);
-  // printf ("   ***fd: %p\n", (char *) args[0]);
-
   valid_uaddr ((void *) args[0]);
   
   const char *file = (const char *) args[0];
   off_t initial_size = (off_t) args[1];
-  // printf ("   ***fd: %p\n", (void *) file);
-  // printf ("   ***buffer address: %d\n", (off_t) args[1]);
 
   lock_acquire (&syscall_lock);
   bool success = filesys_create (file, initial_size);
@@ -220,7 +206,6 @@ syscall_remove (struct intr_frame *f UNUSED)
 {
   int args[1];
   copy_in (args, (uint32_t *) f->esp + 1, sizeof *args);
-
   valid_uaddr ((void *) args[0]);
 
   const char *file = (const char *) args[0];
@@ -236,7 +221,6 @@ syscall_open (struct intr_frame *f UNUSED)
 {
   int args[1];
   copy_in (args, (uint32_t *) f->esp + 1, sizeof *args);
-
   valid_uaddr ((void *) args[0]);
 
   const char *file_name = (const char *) args[0];
@@ -284,7 +268,6 @@ syscall_read (struct intr_frame *f UNUSED)
   copy_in (args, (uint32_t *) f->esp + 1, sizeof *args * 3);
 
   int fd = (int) args[0];
-  // check buffer is valid before entering lock or no?
   void *buffer = (void *) args[1];
   unsigned size = (unsigned) args[2];
 
@@ -316,10 +299,6 @@ syscall_write (struct intr_frame *f UNUSED)
 {
   int args[3];
   copy_in (args, (uint32_t *) f->esp + 1, sizeof *args * 3);
-
-  // printf ("   ***fd: %d (should be %u)\n", args[0], STDOUT_FILENO);
-  // printf ("   ***buffer address: %p\n", args[1]);
-  // printf ("   ***size: %u\n", args[2]);
   
   int fd = (int) args[0];
   void *buffer = (void *) args[1];
@@ -329,9 +308,7 @@ syscall_write (struct intr_frame *f UNUSED)
 
   lock_acquire (&syscall_lock);
   if (fd == STDOUT_FILENO) {
-    // execute the write on STDOUT_FILENO
     putbuf (buffer, size);
-    // set the returned value
     f->eax = size;
   }
   else {
@@ -404,7 +381,6 @@ syscall_handler (struct intr_frame *f UNUSED)
 {
   unsigned int syscall_nr;
   copy_in (&syscall_nr, f->esp, sizeof syscall_nr);
-  // printf ("   ***syscall number: %u\n", syscall_nr);
 
   switch (syscall_nr) {
     case SYS_HALT:
@@ -451,7 +427,4 @@ syscall_handler (struct intr_frame *f UNUSED)
       kernel_exit (-1);
       break;
   }
-
-  // printf ("system call!\n");
-  // thread_exit ();
 }

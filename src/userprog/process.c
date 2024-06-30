@@ -29,23 +29,17 @@ static struct process *find_child_by_pid (struct thread *parent, tid_t pid);
 static struct process *
 find_child_by_pid (struct thread *parent, tid_t pid)
 {
-  // enum intr_level old_level;
-  
   struct process *result = NULL;
 
-  // old_level = intr_disable ();
   if (!list_empty (&parent->child_list)) {
     struct list_elem *e;
     for (e = list_begin (&parent->child_list); e != list_end (&parent->child_list); e = list_next (e)) {
       struct process *child = list_entry (e, struct process, child_elem);
-      // printf("tid: %d, name: %s\n", t->tid, t->name);
       if (pid == child->pid) {
         result = child;
       }
     }
   }
-  // intr_set_level (old_level);
-
   return result;
 }
 
@@ -56,8 +50,6 @@ find_child_by_pid (struct thread *parent, tid_t pid)
 tid_t
 process_execute (const char *file_name) 
 {
-  // printf("process execute\n");
-
   char *fn_copy;
   tid_t tid;
 
@@ -76,7 +68,6 @@ process_execute (const char *file_name)
   char *thread_name, *save_ptr;
   strlcpy (thread_copy, file_name, PGSIZE);
   thread_name = strtok_r (thread_copy, " ", &save_ptr);
-  // printf("thread name: %s\n", thread_name);
 
   /* Create a new thread to execute FILE_NAME. */
   tid = thread_create (thread_name, PRI_DEFAULT, start_process, fn_copy);
@@ -86,19 +77,13 @@ process_execute (const char *file_name)
   palloc_free_page (thread_copy);
 
   struct thread *cur = thread_current ();
-  // printf("name: %s, %d\n", cur->name, tid);
-  // load status
 
   struct process *child_proc = find_child_by_pid (cur, tid);
-  // struct process *child_proc = child->process;
-  // printf("name: %s, %d\n", child->name, child->tid);
-  // printf("return status %d\n", cur->process->return_status);
 
   sema_down (&child_proc->exec_sema);
   if (!child_proc->load_status) {
     return TID_ERROR;
   }
-  // printf("name: %s, %d\n", child->name, child->tid);
 
   return tid;
 }
@@ -151,30 +136,23 @@ start_process (void *file_name_)
 int
 process_wait (tid_t child_tid UNUSED) 
 {
-  // printf("process wait\n");
-  // printf("wait tid: %d\n", child_tid);
   if (child_tid == TID_ERROR) {
     return -1;
   }
 
   struct thread *cur = thread_current ();
-  // printf("child tid: %d\n", cur_proc->child->pid);
 
   struct process *child = find_child_by_pid (cur, child_tid);
   if (child == NULL || child->wait_status) {
     return -1;
   }
   
-  // printf("before sema tid: %d\n", child->pid);
   list_remove (&child->child_elem);
   
   if (!child->is_terminated) {
     child->wait_status = true;
     sema_down (&child->wait_sema);
   }
-
-  // printf("after sema tid: %d\n", child->pid);
-  // printf("return status: %d\n", child->return_status);
   
   int status = child->return_status;
   free (child);
@@ -317,7 +295,6 @@ load (const char *file_name, void (**eip) (void), void **esp)
   strlcpy (fn_copy, file_name, PGSIZE);
   char *f_name, *save_ptr;
   f_name = strtok_r (fn_copy, " ", &save_ptr);
-  // printf("file name: %s\n", f_name);
 
   /* Open executable file. */
   file = filesys_open (f_name);
@@ -557,16 +534,13 @@ setup_stack (const char *file_name, void **esp)
 
           *esp -= len + 1;
           argv_len += len + 1;
-          // printf("esp: %p\n", argu->argv);
 
           argc++;
         }
 
         palloc_free_page (fn_copy);
-        
-        // printf("argc: %d\n", argc);
-        
-        // printf("word align %d\n", argv_len % 4);
+               
+        /* Calculate word align and null pointer sentinel */
         *esp -= 4 - (argv_len % 4);
         *esp -= 4;
         int align_len = 8 - (argv_len % 4);
@@ -586,12 +560,8 @@ setup_stack (const char *file_name, void **esp)
           void *argv_addr = *esp + (arg_ctr * sizeof(uintptr_t));
           void *argv = argv_addr + ((argc - arg_ctr) * sizeof(uintptr_t)) + align_len + argv_len;
 
-          // printf("token: %s\n", token);
           memcpy(argv, token, len);
           memset(argv + len, '\0', 1);
-
-          // printf("argv: %p\n", argv);
-          // printf("argv_addr: %p\n", argv_addr);
 
           uintptr_t argv_data_addr = (uintptr_t) argv;
           memcpy (argv_addr, &argv_data_addr, sizeof(uintptr_t));
@@ -612,11 +582,6 @@ setup_stack (const char *file_name, void **esp)
         *esp -= sizeof(int);
         int return_addr = 0;
         memcpy (*esp, &return_addr, sizeof(int));
-
-        // printf("esp: %p\n", *esp);
-
-        // *esp = PHYS_BASE - 32;
-        // hex_dump((uintptr_t) *esp, *esp, (uintptr_t) PHYS_BASE - (uintptr_t) *esp, true);
       }
       else
         palloc_free_page (kpage);
