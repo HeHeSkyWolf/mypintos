@@ -190,7 +190,6 @@ thread_create (const char *name, int priority,
 
   t->process = malloc (sizeof (struct process));
   t->process->pid = t->tid;
-  list_init (&t->process->sibling_list);
   list_init (&t->process->file_opened_list);
 
   t->process->is_terminated = false;
@@ -326,12 +325,7 @@ add_child (struct thread *parent, struct thread *child) {
 
   old_level = intr_disable ();
   child->parent = parent;
-  if (parent->child_proc == NULL) {
-    parent->child_proc = child->process;
-  }
-  else {
-    list_push_back (&parent->child_proc->sibling_list, &child->process->sibling_elem);
-  }
+  list_push_back (&parent->child_list, &child->process->child_elem);
   intr_set_level (old_level);
 }
 
@@ -340,23 +334,15 @@ free_process (struct thread *t) {
   enum intr_level old_level;
 
   old_level = intr_disable ();
-  if (t->child_proc != NULL) {
-    while (!list_empty (&t->child_proc->sibling_list)) {
-      struct process *child = list_entry (list_pop_back 
-                                         (&t->child_proc->sibling_list), 
-                                          struct process, sibling_elem);
-      if (!child->is_terminated) {
-        child->correspond_thread->parent = NULL;
-      }
-      else {
-        free (child);
-      }
-    }
-    if (!t->child_proc->is_terminated) {
-      t->child_proc->correspond_thread->parent = NULL;
+  while (!list_empty (&t->child_list)) {
+    struct process *child = list_entry (list_pop_front 
+                                        (&t->child_list), 
+                                        struct process, child_elem);
+    if (!child->is_terminated) {
+      child->correspond_thread->parent = NULL;
     }
     else {
-      free (t->child_proc);
+      free (child);
     }
   }
 
@@ -563,7 +549,7 @@ init_thread (struct thread *t, const char *name, int priority)
 
   t->process = NULL;
   t->parent = NULL;
-  t->child_proc = NULL;
+  list_init (&t->child_list);
   t->next_fd = 2;
 
   old_level = intr_disable ();

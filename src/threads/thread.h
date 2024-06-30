@@ -98,7 +98,7 @@ struct thread
     /* Process */
     struct process *process;
     struct thread *parent;
-    struct process *child_proc;
+    struct list child_list;
 
     /* File */
     int next_fd;
@@ -117,8 +117,7 @@ struct process {
     tid_t pid;
     struct thread *correspond_thread;
 
-    struct list sibling_list;
-    struct list_elem sibling_elem;
+    struct list_elem child_elem;
 
     struct semaphore wait_sema;
     bool wait_status;

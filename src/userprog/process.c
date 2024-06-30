@@ -29,26 +29,18 @@ static struct process *find_child_by_pid (struct thread *parent, tid_t pid);
 static struct process *
 find_child_by_pid (struct thread *parent, tid_t pid)
 {
-  struct process *child = parent->child_proc;
-
   // enum intr_level old_level;
   
   struct process *result = NULL;
 
   // old_level = intr_disable ();
-  if (child != NULL) {
-    if (child->pid == pid) {
-      result = child;
-    }
-
-    if (!list_empty (&child->sibling_list)) {
-      struct list_elem *e;
-      for (e = list_begin (&child->sibling_list); e != list_end (&child->sibling_list); e = list_next (e)) {
-        struct process *t = list_entry (e, struct process, sibling_elem);
-        // printf("tid: %d, name: %s\n", t->tid, t->name);
-        if (pid == t->pid) {
-          result = t;
-        }
+  if (!list_empty (&parent->child_list)) {
+    struct list_elem *e;
+    for (e = list_begin (&parent->child_list); e != list_end (&parent->child_list); e = list_next (e)) {
+      struct process *child = list_entry (e, struct process, child_elem);
+      // printf("tid: %d, name: %s\n", t->tid, t->name);
+      if (pid == child->pid) {
+        result = child;
       }
     }
   }
@@ -174,19 +166,7 @@ process_wait (tid_t child_tid UNUSED)
   }
   
   // printf("before sema tid: %d\n", child->pid);
-  if (cur->child_proc->pid == child->pid) {
-    if (!list_empty (&child->sibling_list)) {
-      struct list_elem *elem = list_pop_front (&child->sibling_list);
-      struct process *next_child = list_entry (elem, struct process, sibling_elem);
-      cur->child_proc = next_child;
-    }
-    else {
-      cur->child_proc = NULL;
-    }
-  }
-  else {
-    list_remove (&child->sibling_elem);
-  }
+  list_remove (&child->child_elem);
   
   if (!child->is_terminated) {
     child->wait_status = true;
