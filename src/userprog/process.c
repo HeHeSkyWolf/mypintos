@@ -18,13 +18,23 @@
 #include "threads/thread.h"
 #include "threads/vaddr.h" 
 
+#include <hash.h>
+
 #include "threads/malloc.h"
 #include "userprog/syscall.h"
+#include "vm/frame.h"
+#include "vm/page.h"
 
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
 
+/* Process */
 static struct process *find_child_by_pid (struct thread *parent, tid_t pid);
+
+/* VM */
+static unsigned page_hash (const struct hash_elem *e, void *aux UNUSED);
+static bool page_less (const struct hash_elem *a_, const struct hash_elem *b_, 
+                       void *aux UNUSED);
 
 static struct process *
 find_child_by_pid (struct thread *parent, tid_t pid)
@@ -88,6 +98,23 @@ process_execute (const char *file_name)
   return tid;
 }
 
+static unsigned
+page_hash (const struct hash_elem *e, void *aux UNUSED)
+{
+    const struct sup_data *data = hash_entry (e, struct sup_data, hash_elem);
+    return hash_bytes (&data->vaddr, sizeof data->vaddr);
+}
+
+static bool
+page_less (const struct hash_elem *a_, const struct hash_elem *b_, 
+           void *aux UNUSED)
+{
+  const struct sup_data *a = hash_entry (a_, struct sup_data, hash_elem);
+  const struct sup_data *b = hash_entry (b_, struct sup_data, hash_elem);
+
+  return a->vaddr < b->vaddr;
+}
+
 /* A thread function that loads a user process and starts it
    running. */
 static void
@@ -96,6 +123,8 @@ start_process (void *file_name_)
   char *file_name = file_name_;
   struct intr_frame if_;
   bool success;
+
+  hash_init (&thread_current ()->sup_page_table, page_hash, page_less, NULL);
 
   /* Initialize interrupt frame and load executable. */
   memset (&if_, 0, sizeof if_);
@@ -165,6 +194,8 @@ process_exit (void)
 {
   struct thread *cur = thread_current ();
   uint32_t *pd;
+
+  hash_destroy (&cur->sup_page_table, sup_page_free);
 
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */

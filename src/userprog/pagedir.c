@@ -6,6 +6,9 @@
 #include "threads/pte.h"
 #include "threads/palloc.h"
 
+#include "threads/thread.h"
+#include "vm/frame.h"
+
 static uint32_t *active_pd (void);
 static void invalidate_pagedir (uint32_t *);
 
@@ -111,6 +114,8 @@ pagedir_set_page (uint32_t *pd, void *upage, void *kpage, bool writable)
   if (pte != NULL) 
     {
       ASSERT ((*pte & PTE_P) == 0);
+      struct frame_data *frame = frame_init (thread_current (), kpage);
+      list_push_back (&thread_current ()->process->frame_table, &frame->elem);
       *pte = pte_create_user (kpage, writable);
       return true;
     }

@@ -5,6 +5,7 @@
 #include <list.h>
 #include <stdint.h>
 
+#include <hash.h>
 #include "threads/synch.h"
 
 /* States in a thread's life cycle. */
@@ -104,6 +105,9 @@ struct thread
     int next_fd;
     struct file *running_file;
 
+    /* VM */
+    struct hash sup_page_table;
+
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory. */
@@ -128,6 +132,8 @@ struct process {
 
     bool is_terminated;
     int return_status; 
+
+    struct list frame_table;
 };
 
 struct file_open {

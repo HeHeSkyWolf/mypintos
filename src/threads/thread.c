@@ -63,6 +63,7 @@ bool thread_mlfqs;
 
 static void kernel_thread (thread_func *, void *aux);
 
+/* Process */
 static void add_child (struct thread *parent, struct thread *child);
 static void free_process (struct thread *);
 
@@ -204,6 +205,8 @@ thread_create (const char *name, int priority,
   t->process->load_status = false;
 
   add_child (thread_current (), t);
+
+  list_init (&t->process->frame_table);
 
   /* Stack frame for kernel_thread(). */
   kf = alloc_frame (t, sizeof *kf);
