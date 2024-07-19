@@ -132,8 +132,6 @@ struct process {
 
     bool is_terminated;
     int return_status; 
-
-    struct list frame_table;
 };
 
 struct file_open {
