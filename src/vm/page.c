@@ -38,19 +38,13 @@ sup_page_free (struct hash_elem *e, void *aux UNUSED)
 }
 
 bool
-load_file (struct sup_data *data)
+load_file (uint8_t *kpage, struct sup_data *data)
 {
   bool is_lock_held = syscall_lock_held_by_current_thread ();
   if (!is_lock_held) {
     acquire_syscall_lock ();
   }
   // printf("page fault vaddr: %d, %p\n", data->owner->tid, data->upage);
-  /* Get a page of memory. */
-  uint8_t *kpage = palloc_get_page (PAL_USER);
-  if (kpage == NULL) {
-    release_syscall_lock ();
-    return false;
-  }
 
   // printf("page fault kvaddr: %p\n", kpage);
   /* Load this page. */
@@ -71,10 +65,6 @@ load_file (struct sup_data *data)
       return false; 
     }
 
-  struct thread *cur = data->owner;
-  pagedir_set_accessed (cur->pagedir, kpage, false);
-  /* is it suppose to be kpage or upage, and dirty should be set when is read and write */
-  pagedir_set_dirty (cur->pagedir, kpage, false);
   if (!is_lock_held) {
     release_syscall_lock ();
   }
@@ -93,7 +83,6 @@ create_sup_page (uint8_t *upage, struct file *file, bool writable, off_t ofs,
   data->page_zero_bytes = page_zero_bytes;
   data->offset = ofs;
   data->writable = writable;
-  data->is_elf = true;
 
   return data;
 }

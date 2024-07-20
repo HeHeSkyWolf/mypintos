@@ -512,6 +512,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
       struct sup_data *data = create_sup_page (upage, file, writable, ofs, 
                                                page_read_bytes,
                                                page_zero_bytes);
+      data->type = VM_ELF;
       hash_insert (&thread_current ()->sup_page_table, &data->hash_elem);
       // printf("vaddr: %p\n", upage);
       // printf("writeable: %d\n", writable);
@@ -620,7 +621,9 @@ setup_stack (const char *file_name, void **esp)
     data->file = NULL;
     data->upage = ((uint8_t *) PHYS_BASE) - PGSIZE;
     data->writable = false;
-    /* needs to set up length of the stack */   
+    /* needs to set up length of the stack */
+    struct frame_data *frame = create_frame (kpage, data);
+    add_frame_to_table (frame); 
   }
   return success;
 }

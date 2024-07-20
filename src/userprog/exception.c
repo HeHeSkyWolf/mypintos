@@ -5,9 +5,11 @@
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 
+#include "threads/palloc.h"
 #include "threads/vaddr.h"
 #include "userprog/process.h"
 #include "userprog/syscall.h"
+#include "vm/frame.h"
 #include "vm/page.h"
 
 /* Number of page faults processed. */
@@ -195,12 +197,30 @@ handle_page_fault (void *fault_addr)
   }
   else {
     // printf("data upage: %p\n", data->upage);
-    if (data->is_elf) {
-      bool success = load_file (data);
-      if (!success) {
-        return false;
-      }
+    uint8_t *kpage = palloc_get_page (PAL_USER);
+    
+    /* Get a page of memory. */
+    if (kpage == NULL) {
+      return false;
     }
+
+    struct frame_data *frame = create_frame (kpage, data);
+    add_frame_to_table (frame);
+
+    bool success = false;
+
+    switch (data->type) {
+      case VM_ELF:
+        success = load_file (kpage, data);
+        if (!success) {
+          return false;
+        }
+        break;
+      case VM_FILE:
+        break;
+      case VM_ANON:
+        break;      
+    };
   }
   return true;
 }
