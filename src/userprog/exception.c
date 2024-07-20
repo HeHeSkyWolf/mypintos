@@ -15,6 +15,7 @@ static long long page_fault_cnt;
 
 static void kill (struct intr_frame *);
 static void page_fault (struct intr_frame *);
+static bool handle_page_fault (void *fault_addr);
 
 /* Registers handlers for interrupts that can be caused by user
    programs.
@@ -178,3 +179,28 @@ page_fault (struct intr_frame *f)
 //   kill (f);
 }
 
+static bool
+handle_page_fault (void *fault_addr)
+{
+  if (!is_user_vaddr (fault_addr)) {
+    return false;
+  }
+
+  struct thread *cur = thread_current ();
+  void *rounded_addr = pg_round_down (fault_addr);
+  struct sup_data *data = sup_page_lookup (rounded_addr, cur->sup_page_table);
+
+  if (data == NULL) {
+    return false;
+  }
+  else {
+    // printf("data upage: %p\n", data->upage);
+    if (data->is_elf) {
+      bool success = load_file (data);
+      if (!success) {
+        return false;
+      }
+    }
+  }
+  return true;
+}

@@ -35,7 +35,6 @@ static struct process *find_child_by_pid (struct thread *parent, tid_t pid);
 static unsigned page_hash (const struct hash_elem *e, void *aux UNUSED);
 static bool page_less (const struct hash_elem *a_, const struct hash_elem *b_, 
                        void *aux UNUSED);
-static bool load_file (struct sup_data *data);
 
 static struct process *
 find_child_by_pid (struct thread *parent, tid_t pid)
@@ -429,7 +428,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
 
 /* load() helpers. */
 
-static bool install_page (void *upage, void *kpage, bool writable);
+bool install_page (void *upage, void *kpage, bool writable);
 
 /* Checks whether PHDR describes a valid, loadable segment in
    FILE and returns true if so, false otherwise. */
@@ -510,15 +509,9 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
       size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
       size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
-      struct sup_data *data = malloc (sizeof (struct sup_data));
-      data->owner = thread_current ();
-      data->upage = upage;
-      data->file = file;
-      data->page_read_bytes = page_read_bytes;
-      data->page_zero_bytes = page_zero_bytes;
-      data->offset = ofs;
-      data->writable = writable;
-      data->is_elf = true;
+      struct sup_data *data = create_sup_page (upage, file, writable, ofs, 
+                                               page_read_bytes,
+                                               page_zero_bytes);
       hash_insert (&thread_current ()->sup_page_table, &data->hash_elem);
       // printf("vaddr: %p\n", upage);
       // printf("writeable: %d\n", writable);
@@ -641,7 +634,7 @@ setup_stack (const char *file_name, void **esp)
    with palloc_get_page().
    Returns true on success, false if UPAGE is already mapped or
    if memory allocation fails. */
-static bool
+bool
 install_page (void *upage, void *kpage, bool writable)
 {
   struct thread *t = thread_current ();
@@ -650,74 +643,4 @@ install_page (void *upage, void *kpage, bool writable)
      address, then map our page there. */
   return (pagedir_get_page (t->pagedir, upage) == NULL
           && pagedir_set_page (t->pagedir, upage, kpage, writable));
-}
-
-bool
-handle_page_fault (void *fault_addr)
-{
-  if (!is_user_vaddr (fault_addr)) {
-    return false;
-  }
-
-  struct thread *cur = thread_current ();
-  void *rounded_addr = pg_round_down (fault_addr);
-  struct sup_data *data = sup_page_lookup (rounded_addr, cur->sup_page_table);
-
-  if (data == NULL) {
-    return false;
-  }
-  else {
-    // printf("data upage: %p\n", data->upage);
-    if (data->is_elf) {
-      bool success = load_file (data);
-      if (!success) {
-        return false;
-      }
-    }
-  }
-  return true;
-}
-
-static bool
-load_file (struct sup_data *data)
-{
-  bool is_lock_held = syscall_lock_held_by_current_thread ();
-  if (!is_lock_held) {
-    acquire_syscall_lock ();
-  }
-  // printf("page fault vaddr: %d, %p\n", data->owner->tid, data->upage);
-  /* Get a page of memory. */
-  uint8_t *kpage = palloc_get_page (PAL_USER);
-  if (kpage == NULL) {
-    release_syscall_lock ();
-    return false;
-  }
-
-  // printf("page fault kvaddr: %p\n", kpage);
-  /* Load this page. */
-  if (file_read_at (data->file, kpage, data->page_read_bytes, data->offset) != 
-      (int) data->page_read_bytes)
-    {
-      palloc_free_page (kpage);
-      release_syscall_lock ();
-      return false; 
-    }
-  memset (kpage + data->page_read_bytes, 0, data->page_zero_bytes);
-
-  /* Add the page to the process's address space. */
-  if (!install_page (data->upage, kpage, data->writable)) 
-    {
-      palloc_free_page (kpage);
-      release_syscall_lock ();
-      return false; 
-    }
-
-  struct thread *cur = data->owner;
-  pagedir_set_accessed (cur->pagedir, kpage, false);
-  /* is it suppose to be kpage or upage, and dirty should be set when is read and write */
-  pagedir_set_dirty (cur->pagedir, kpage, false);
-  if (!is_lock_held) {
-    release_syscall_lock ();
-  }
-  return true;
 }
