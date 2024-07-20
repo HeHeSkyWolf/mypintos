@@ -68,6 +68,9 @@ static void kernel_thread (thread_func *, void *aux);
 static void add_child (struct thread *parent, struct thread *child);
 static void free_process (struct thread *);
 
+/* VM */
+static struct lock exception_lock;
+
 static void idle (void *aux UNUSED);
 static struct thread *running_thread (void);
 static struct thread *next_thread_to_run (void);
@@ -101,12 +104,25 @@ thread_init (void)
   list_init (&all_list);
 
   frame_table_init ();
+  lock_init (&exception_lock);
 
   /* Set up a thread structure for the running thread. */
   initial_thread = running_thread ();
   init_thread (initial_thread, "main", PRI_DEFAULT);
   initial_thread->status = THREAD_RUNNING;
   initial_thread->tid = allocate_tid ();
+}
+
+void 
+acquire_exception_lock (void)
+{
+  lock_acquire (&exception_lock);
+}
+
+void
+release_exception_lock (void)
+{
+  lock_release (&exception_lock);
 }
 
 /* Starts preemptive thread scheduling by enabling interrupts.

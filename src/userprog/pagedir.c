@@ -114,8 +114,8 @@ pagedir_set_page (uint32_t *pd, void *upage, void *kpage, bool writable)
   if (pte != NULL) 
     {
       ASSERT ((*pte & PTE_P) == 0);
-      struct frame_data *frame = frame_init (thread_current (), kpage);
-      add_frame_to_table (frame);
+      // struct frame_data *frame = frame_init (thread_current (), kpage);
+      // add_frame_to_table (frame);
       *pte = pte_create_user (kpage, writable);
       return true;
     }

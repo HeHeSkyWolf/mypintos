@@ -157,7 +157,12 @@ tid_t thread_create (const char *name, int priority, thread_func *, void *);
 void thread_block (void);
 void thread_unblock (struct thread *);
 
+/* P2 */
 struct thread *find_thread_by_tid (tid_t);
+
+/* P3 */
+void acquire_exception_lock (void);
+void release_exception_lock (void);
 
 struct thread *thread_current (void);
 tid_t thread_tid (void);

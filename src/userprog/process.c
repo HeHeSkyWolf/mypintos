@@ -35,6 +35,7 @@ static struct process *find_child_by_pid (struct thread *parent, tid_t pid);
 static unsigned page_hash (const struct hash_elem *e, void *aux UNUSED);
 static bool page_less (const struct hash_elem *a_, const struct hash_elem *b_, 
                        void *aux UNUSED);
+static bool load_file (struct sup_data *data);
 
 static struct process *
 find_child_by_pid (struct thread *parent, tid_t pid)
@@ -102,7 +103,7 @@ static unsigned
 page_hash (const struct hash_elem *e, void *aux UNUSED)
 {
     const struct sup_data *data = hash_entry (e, struct sup_data, hash_elem);
-    return hash_bytes (&data->vaddr, sizeof data->vaddr);
+    return hash_bytes (&data->upage, sizeof data->upage);
 }
 
 static bool
@@ -112,7 +113,7 @@ page_less (const struct hash_elem *a_, const struct hash_elem *b_,
   const struct sup_data *a = hash_entry (a_, struct sup_data, hash_elem);
   const struct sup_data *b = hash_entry (b_, struct sup_data, hash_elem);
 
-  return a->vaddr < b->vaddr;
+  return a->upage < b->upage;
 }
 
 /* A thread function that loads a user process and starts it
@@ -497,6 +498,9 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
   ASSERT (pg_ofs (upage) == 0);
   ASSERT (ofs % PGSIZE == 0);
 
+  // printf("loading segment\n");
+  // printf("thread name: %s\n", thread_current ()-> name);
+
   file_seek (file, ofs);
   while (read_bytes > 0 || zero_bytes > 0) 
     {
@@ -506,30 +510,26 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
       size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
       size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
-      /* Get a page of memory. */
-      uint8_t *kpage = palloc_get_page (PAL_USER);
-      if (kpage == NULL)
-        return false;
-
-      /* Load this page. */
-      if (file_read (file, kpage, page_read_bytes) != (int) page_read_bytes)
-        {
-          palloc_free_page (kpage);
-          return false; 
-        }
-      memset (kpage + page_read_bytes, 0, page_zero_bytes);
-
-      /* Add the page to the process's address space. */
-      if (!install_page (upage, kpage, writable)) 
-        {
-          palloc_free_page (kpage);
-          return false; 
-        }
+      struct sup_data *data = malloc (sizeof (struct sup_data));
+      data->owner = thread_current ();
+      data->upage = upage;
+      data->file = file;
+      data->page_read_bytes = page_read_bytes;
+      data->page_zero_bytes = page_zero_bytes;
+      data->offset = ofs;
+      data->writable = writable;
+      data->is_elf = true;
+      hash_insert (&thread_current ()->sup_page_table, &data->hash_elem);
+      // printf("vaddr: %p\n", upage);
+      // printf("writeable: %d\n", writable);
+      // printf("read bytes: %d\n", page_read_bytes);
+      // printf("offset: %d\n", ofs);
 
       /* Advance. */
       read_bytes -= page_read_bytes;
       zero_bytes -= page_zero_bytes;
       upage += PGSIZE;
+      ofs += PGSIZE;
     }
   return true;
 }
@@ -546,6 +546,9 @@ setup_stack (const char *file_name, void **esp)
   if (kpage != NULL) 
     {
       success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
+
+      // printf("kvaddr for stack: %p\n", kpage);
+
       if (success) {
         *esp = PHYS_BASE;
         
@@ -617,6 +620,15 @@ setup_stack (const char *file_name, void **esp)
       else
         palloc_free_page (kpage);
     }
+  if (success) {
+    struct sup_data *data = malloc (sizeof (struct sup_data));
+    data->owner = thread_current ();
+
+    data->file = NULL;
+    data->upage = ((uint8_t *) PHYS_BASE) - PGSIZE;
+    data->writable = false;
+    /* needs to set up length of the stack */   
+  }
   return success;
 }
 
@@ -638,4 +650,74 @@ install_page (void *upage, void *kpage, bool writable)
      address, then map our page there. */
   return (pagedir_get_page (t->pagedir, upage) == NULL
           && pagedir_set_page (t->pagedir, upage, kpage, writable));
+}
+
+bool
+handle_page_fault (void *fault_addr)
+{
+  if (!is_user_vaddr (fault_addr)) {
+    return false;
+  }
+
+  struct thread *cur = thread_current ();
+  void *rounded_addr = pg_round_down (fault_addr);
+  struct sup_data *data = sup_page_lookup (rounded_addr, cur->sup_page_table);
+
+  if (data == NULL) {
+    return false;
+  }
+  else {
+    // printf("data upage: %p\n", data->upage);
+    if (data->is_elf) {
+      bool success = load_file (data);
+      if (!success) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+static bool
+load_file (struct sup_data *data)
+{
+  bool is_lock_held = syscall_lock_held_by_current_thread ();
+  if (!is_lock_held) {
+    acquire_syscall_lock ();
+  }
+  // printf("page fault vaddr: %d, %p\n", data->owner->tid, data->upage);
+  /* Get a page of memory. */
+  uint8_t *kpage = palloc_get_page (PAL_USER);
+  if (kpage == NULL) {
+    release_syscall_lock ();
+    return false;
+  }
+
+  // printf("page fault kvaddr: %p\n", kpage);
+  /* Load this page. */
+  if (file_read_at (data->file, kpage, data->page_read_bytes, data->offset) != 
+      (int) data->page_read_bytes)
+    {
+      palloc_free_page (kpage);
+      release_syscall_lock ();
+      return false; 
+    }
+  memset (kpage + data->page_read_bytes, 0, data->page_zero_bytes);
+
+  /* Add the page to the process's address space. */
+  if (!install_page (data->upage, kpage, data->writable)) 
+    {
+      palloc_free_page (kpage);
+      release_syscall_lock ();
+      return false; 
+    }
+
+  struct thread *cur = data->owner;
+  pagedir_set_accessed (cur->pagedir, kpage, false);
+  /* is it suppose to be kpage or upage, and dirty should be set when is read and write */
+  pagedir_set_dirty (cur->pagedir, kpage, false);
+  if (!is_lock_held) {
+    release_syscall_lock ();
+  }
+  return true;
 }
