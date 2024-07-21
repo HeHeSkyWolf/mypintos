@@ -56,10 +56,6 @@ valid_uaddr (const void *uaddr)
 
   if (uaddr == NULL)
     kernel_exit (-1);
-  
-  struct thread *t = thread_current ();
-  if (pagedir_get_page (t->pagedir, uaddr) == NULL)
-    kernel_exit (-1);
 }
 
 void 

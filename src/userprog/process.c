@@ -517,6 +517,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
       // printf("vaddr: %p\n", upage);
       // printf("writeable: %d\n", writable);
       // printf("read bytes: %d\n", page_read_bytes);
+      // printf("zero bytes: %d\n", page_zero_bytes);
       // printf("offset: %d\n", ofs);
 
       /* Advance. */
@@ -621,9 +622,13 @@ setup_stack (const char *file_name, void **esp)
     data->file = NULL;
     data->upage = ((uint8_t *) PHYS_BASE) - PGSIZE;
     data->writable = false;
+    data->type = VM_ELF;
     /* needs to set up length of the stack */
     struct frame_data *frame = create_frame (kpage, data);
-    add_frame_to_table (frame); 
+    add_frame_to_table (frame);
+    if (lru_start == NULL) {
+      lru_start = frame;
+    }
   }
   return success;
 }

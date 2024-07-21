@@ -9,8 +9,8 @@
 #include "threads/vaddr.h"
 #include "userprog/process.h"
 #include "userprog/syscall.h"
-#include "vm/frame.h"
 #include "vm/page.h"
+#include "vm/swap.h"
 
 /* Number of page faults processed. */
 static long long page_fault_cnt;
@@ -130,7 +130,6 @@ kill (struct intr_frame *f)
 static void
 page_fault (struct intr_frame *f) 
 {
-  acquire_exception_lock ();
   bool not_present;  /* True: not-present page, false: writing r/o page. */
   bool write;        /* True: access was write, false: access was read. */
   bool user;         /* True: access by user, false: access by kernel. */
@@ -156,7 +155,8 @@ page_fault (struct intr_frame *f)
   not_present = (f->error_code & PF_P) == 0;
   write = (f->error_code & PF_W) != 0;
   user = (f->error_code & PF_U) != 0;
-  
+  // printf("fault addr: %p\n", fault_addr);
+  acquire_exception_lock ();
   if (not_present) {
     if (1) {
       // printf("fault addr: %p\n", fault_addr);
@@ -188,6 +188,11 @@ handle_page_fault (void *fault_addr)
     return false;
   }
 
+  if (!is_swap_init) {
+    swap_init ();
+    is_swap_init = true;
+  }
+
   struct thread *cur = thread_current ();
   void *rounded_addr = pg_round_down (fault_addr);
   struct sup_data *data = sup_page_lookup (rounded_addr, cur->sup_page_table);
@@ -201,11 +206,21 @@ handle_page_fault (void *fault_addr)
     
     /* Get a page of memory. */
     if (kpage == NULL) {
-      return false;
+      struct frame_data *victim = select_victim_frame ();
+      if (victim == NULL) {
+        return false;
+      }  
+      swap_out (victim);
+      kpage = palloc_get_page (PAL_USER);
+      if (kpage == NULL) {
+        return false;
+      }
     }
-
     struct frame_data *frame = create_frame (kpage, data);
     add_frame_to_table (frame);
+    if (lru_start == NULL) {
+      lru_start = frame;
+    }
 
     bool success = false;
 
@@ -219,6 +234,10 @@ handle_page_fault (void *fault_addr)
       case VM_FILE:
         break;
       case VM_ANON:
+        success = swap_in (kpage, data);
+        if (!success) {
+          return false;
+        }
         break;      
     };
   }

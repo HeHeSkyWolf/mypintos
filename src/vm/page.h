@@ -23,6 +23,7 @@ struct sup_data
   off_t offset;
 
   enum file_type type;
+  size_t sector_idx;
 };
 
 struct sup_data *sup_page_lookup (const void *address, struct hash sup_table);
