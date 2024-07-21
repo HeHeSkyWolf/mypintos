@@ -11,8 +11,6 @@ struct frame_data {
   bool is_owned;
 };
 
-struct frame_data *lru_start;
-
 void frame_table_init (void);
 void add_frame_to_table (struct frame_data *frame);
 struct frame_data *create_frame (uint8_t *vaddr, struct sup_data *sp_data);

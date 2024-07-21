@@ -7,6 +7,7 @@
 
 #include "threads/palloc.h"
 #include "threads/vaddr.h"
+#include "userprog/pagedir.h"
 #include "userprog/process.h"
 #include "userprog/syscall.h"
 #include "vm/page.h"
@@ -155,29 +156,23 @@ page_fault (struct intr_frame *f)
   not_present = (f->error_code & PF_P) == 0;
   write = (f->error_code & PF_W) != 0;
   user = (f->error_code & PF_U) != 0;
-  // printf("fault addr: %p\n", fault_addr);
+  // printf ("Page fault at %p: %s error %s page in %s context.\n",
+  //         fault_addr,
+  //         not_present ? "not present" : "rights violation",
+  //         write ? "writing" : "reading",
+  //         user ? "user" : "kernel");
   acquire_exception_lock ();
   if (not_present) {
-    if (1) {
-      // printf("fault addr: %p\n", fault_addr);
-      bool success = handle_page_fault (fault_addr);
-      if (success) {
-        release_exception_lock ();
-        return;
-      }
+    // printf("fault addr: %p\n", fault_addr);
+    bool success = handle_page_fault (fault_addr);
+    if (success) {
+      release_exception_lock ();
+      return;
     }
   }
   release_exception_lock ();
+  printf("exception error\n");
   kernel_exit (-1);
-
-//   /* To implement virtual memory, delete the rest of the function
-//      body, and replace it with code that brings in the page to
-//      which fault_addr refers. */
-//   printf ("Page fault at %p: %s error %s page in %s context.\n",
-//           fault_addr,
-//           not_present ? "not present" : "rights violation",
-//           write ? "writing" : "reading",
-//           user ? "user" : "kernel");
 //   kill (f);
 }
 
@@ -188,11 +183,6 @@ handle_page_fault (void *fault_addr)
     return false;
   }
 
-  if (!is_swap_init) {
-    swap_init ();
-    is_swap_init = true;
-  }
-
   struct thread *cur = thread_current ();
   void *rounded_addr = pg_round_down (fault_addr);
   struct sup_data *data = sup_page_lookup (rounded_addr, cur->sup_page_table);
@@ -200,33 +190,17 @@ handle_page_fault (void *fault_addr)
   if (data == NULL) {
     return false;
   }
+  else if (pagedir_get_page (cur->pagedir, rounded_addr)) {
+    printf("find!\n");
+    return true;
+  }
   else {
-    // printf("data upage: %p\n", data->upage);
-    uint8_t *kpage = palloc_get_page (PAL_USER);
-    
-    /* Get a page of memory. */
-    if (kpage == NULL) {
-      struct frame_data *victim = select_victim_frame ();
-      if (victim == NULL) {
-        return false;
-      }  
-      swap_out (victim);
-      kpage = palloc_get_page (PAL_USER);
-      if (kpage == NULL) {
-        return false;
-      }
-    }
-    struct frame_data *frame = create_frame (kpage, data);
-    add_frame_to_table (frame);
-    if (lru_start == NULL) {
-      lru_start = frame;
-    }
-
+    // printf("get a frame\n");
     bool success = false;
 
     switch (data->type) {
       case VM_ELF:
-        success = load_file (kpage, data);
+        success = load_file (data);
         if (!success) {
           return false;
         }
@@ -234,8 +208,10 @@ handle_page_fault (void *fault_addr)
       case VM_FILE:
         break;
       case VM_ANON:
-        success = swap_in (kpage, data);
+        success = swap_in (data);
+        printf("swap-in\n");
         if (!success) {
+          // printf("success?\n");
           return false;
         }
         break;      

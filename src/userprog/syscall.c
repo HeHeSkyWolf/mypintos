@@ -13,6 +13,7 @@
 #include "userprog/process.h"
 #include "filesys/file.h"
 #include "filesys/filesys.h"
+#include "vm/swap.h"
 
 static struct lock syscall_lock;
 
@@ -45,6 +46,7 @@ void
 syscall_init (void) 
 {
   lock_init (&syscall_lock);
+  is_swap_init = false;
   intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
 }
 

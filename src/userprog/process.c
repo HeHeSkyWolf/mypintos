@@ -196,6 +196,7 @@ process_exit (void)
   uint32_t *pd;
 
   hash_destroy (&cur->sup_page_table, sup_page_free);
+  // clear_frame_table ();
 
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
@@ -428,7 +429,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
 
 /* load() helpers. */
 
-bool install_page (void *upage, void *kpage, bool writable);
+static bool install_page (void *upage, void *kpage, bool writable);
 
 /* Checks whether PHDR describes a valid, loadable segment in
    FILE and returns true if so, false otherwise. */
@@ -626,9 +627,6 @@ setup_stack (const char *file_name, void **esp)
     /* needs to set up length of the stack */
     struct frame_data *frame = create_frame (kpage, data);
     add_frame_to_table (frame);
-    if (lru_start == NULL) {
-      lru_start = frame;
-    }
   }
   return success;
 }
@@ -642,11 +640,20 @@ setup_stack (const char *file_name, void **esp)
    with palloc_get_page().
    Returns true on success, false if UPAGE is already mapped or
    if memory allocation fails. */
-bool
+static bool
 install_page (void *upage, void *kpage, bool writable)
 {
   struct thread *t = thread_current ();
 
+  /* Verify that there's not already a page at that virtual
+     address, then map our page there. */
+  return (pagedir_get_page (t->pagedir, upage) == NULL
+          && pagedir_set_page (t->pagedir, upage, kpage, writable));
+}
+
+bool
+install_page_by_thread (struct thread *t, void *upage, void *kpage, bool writable)
+{
   /* Verify that there's not already a page at that virtual
      address, then map our page there. */
   return (pagedir_get_page (t->pagedir, upage) == NULL

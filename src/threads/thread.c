@@ -104,7 +104,6 @@ thread_init (void)
   list_init (&all_list);
 
   frame_table_init ();
-  is_swap_init = false;
   lock_init (&exception_lock);
 
   /* Set up a thread structure for the running thread. */

@@ -5,22 +5,45 @@
 #include "threads/palloc.h"
 #include "threads/thread.h"
 #include "userprog/pagedir.h"
-#include "vm/frame.h"
 #include "vm/page.h"
+#include "vm/swap.h"
 
 static struct list frame_table;
+static struct list_elem *lru_start;
+
+static size_t max;
+static int cnt = 0;
+static void count_evict (void);
 
 void
 frame_table_init (void)
 {
   lru_start = NULL;
   list_init (&frame_table);
+  max = 0;
+}
+
+static void
+max_frame (void)
+{
+  if (max < list_size (&frame_table)) {
+    max = list_size (&frame_table);
+  }
+  printf("Max frame table size: %d\n", max);
 }
 
 void
 add_frame_to_table (struct frame_data *frame)
 {
   list_push_back (&frame_table, &frame->elem);
+  // max_frame ();
+}
+
+static void
+count_evict (void)
+{
+  cnt++;
+  printf("cnt: %d\n", cnt);
 }
 
 struct frame_data *
@@ -33,7 +56,7 @@ create_frame (uint8_t *vaddr, struct sup_data *sp_data)
   data->is_owned = true;
   
   //???? for eviction
-  data->is_pinned = false;
+  data->is_pinned = true;
   
   /* size of frame? pfn? */
   return data;
@@ -43,6 +66,9 @@ void
 remove_frame (struct frame_data *frame)
 {
   // printf("freeing frame: %p\n", frame->kaddr);
+  if (frame->sup_entry->is_swapped) {
+    free_sector (frame->sup_entry->sector_idx);
+  }
   list_remove (&frame->elem);
   palloc_free_page (frame->kaddr);
   free(frame);
@@ -58,7 +84,7 @@ clear_frame_table (void) {
     for (e = list_begin (&frame_table); e != list_end (&frame_table); e = list_next (e)) {
       struct frame_data *frame = list_entry (e, struct frame_data, elem);
       if (frame->owner->tid == thread_current ()->tid) {
-        frame->is_owned = false;
+        remove_frame (frame);
       }
     }
   }
@@ -67,51 +93,40 @@ clear_frame_table (void) {
 struct frame_data *
 select_victim_frame (void)
 {
-  if (lru_start == NULL) {
-    return NULL;
-  }
-
-  struct list_elem *start = &lru_start->elem;
   struct frame_data *victim = NULL;
 
   if (!list_empty (&frame_table)) {
+    if (lru_start == NULL) {
+      lru_start = list_begin (&frame_table);
+    }
+
+    struct frame_data *frame = list_entry (lru_start, struct frame_data, elem);
+    struct sup_data *data = frame->sup_entry;
+    
     while (victim == NULL) {
-      struct list_elem *e;
-      for (e = start; e != list_end (&frame_table); e = list_next (e)) {
-        struct frame_data *frame = list_entry (e, struct frame_data, elem);
-        struct sup_data *data = frame->sup_entry;
-        // printf("current frame: %p\n", frame->kaddr);
+      // printf("current frame: %p\n", frame->kaddr);
+      if (!frame->is_pinned) {
         if (!pagedir_is_accessed (data->owner->pagedir, data->upage)) {
-          struct list_elem *next = list_next(e);
+          struct list_elem *next = list_next(lru_start);
           if (next == list_end (&frame_table)) {
             next = list_begin (&frame_table);
           }
-          struct frame_data *next_frame = list_entry (e, struct frame_data, elem);
-          lru_start = next_frame;
+          
+          lru_start = next;
           victim = frame;
+          count_evict ();
         }
         else {
           pagedir_set_accessed (data->owner->pagedir, data->upage, false);
         }
       }
 
-      for (e = list_begin (&frame_table); e != start; e = list_next (e)) {
-        struct frame_data *frame = list_entry (e, struct frame_data, elem);
-        struct sup_data *data = frame->sup_entry;
-        if (!pagedir_is_accessed (data->owner->pagedir, data->upage)) {
-          struct list_elem *next = list_next(e);
-          if (next == list_end (&frame_table)) {
-            next = list_begin (&frame_table);
-          }
-          struct frame_data *next_frame = list_entry (e, struct frame_data, elem);
-          lru_start = next_frame;
-
-          victim = frame;
-        }
-        else {
-          pagedir_set_accessed (data->owner->pagedir, data->upage, false);
-        }
+      lru_start = list_next (lru_start);
+      if (lru_start == list_end (&frame_table)) {
+        lru_start = list_begin (&frame_table);
       }
+      frame = list_entry (lru_start, struct frame_data, elem);
+      data = frame->sup_entry;
     }
   }
   return victim;

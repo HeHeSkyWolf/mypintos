@@ -24,6 +24,7 @@ struct sup_data
 
   enum file_type type;
   size_t sector_idx;
+  bool is_swapped;
 };
 
 struct sup_data *sup_page_lookup (const void *address, struct hash sup_table);
@@ -32,4 +33,4 @@ struct sup_data *create_sup_page (uint8_t *upage, struct file *file,
                                   bool writable, off_t ofs, 
                                   size_t page_read_bytes, 
                                   size_t page_zero_bytes);
-bool load_file (uint8_t *kpage, struct sup_data *data);
+bool load_file (struct sup_data *data);

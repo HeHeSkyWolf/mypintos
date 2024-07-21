@@ -10,6 +10,7 @@
 #include "threads/vaddr.h"
 #include "userprog/pagedir.h"
 #include "userprog/process.h"
+#include "userprog/syscall.h"
 #include "vm/page.h"
 
 static struct block *swap_device;
@@ -19,67 +20,109 @@ static struct lock swap_lock;
 static void swap_out_disk (struct frame_data *frame, struct sup_data *data);
 
 void
+free_sector (size_t sector_idx)
+{
+  bitmap_set_multiple (swap_map, sector_idx, 1, false);
+}
+
+void
 swap_init (void)
 {
   lock_init (&swap_lock);
   swap_device = block_get_role (BLOCK_SWAP);
   if (swap_device == NULL)
     PANIC ("couldn't open swap device");
-  swap_map = bitmap_create (block_size (swap_device));
+  size_t swap_map_size = (block_size (swap_device) * BLOCK_SECTOR_SIZE) / PGSIZE;
+  swap_map = bitmap_create (swap_map_size);
   if (swap_map == NULL)
     PANIC ("bitmap creation failed--swap device is too large");
 }
 
 bool
-swap_in (uint8_t *kpage, struct sup_data *data)
+swap_in (struct sup_data *data)
 {
+  bool is_lock_held = syscall_lock_held_by_current_thread ();
+  if (!is_lock_held) {
+    acquire_syscall_lock ();
+  }
+
+  uint8_t *kpage = palloc_get_page (PAL_USER);
+  struct frame_data *frame = NULL;
+    
+  /* Get a page of memory. */
+  if (kpage == NULL) {
+    struct frame_data *victim = select_victim_frame ();
+    if (victim == NULL) {
+      return false;
+    }
+    frame = swap_out (victim);
+    frame->sup_entry = data;
+    kpage = frame->kaddr;
+  }
+  else {
+    frame = create_frame (kpage, data);
+    add_frame_to_table (frame);
+  }
+
+  /* Add the page to the process's address space. */
+  if (!install_page_by_thread (data->owner, data->upage, kpage, data->writable) || frame == NULL)
+  {
+    palloc_free_page (kpage);
+    return false; 
+  }
+
   for (size_t i = 0; i < SECTOR_PER_PAGE; i++) {
     block_read (swap_device, data->sector_idx * SECTOR_PER_PAGE + i, kpage + BLOCK_SECTOR_SIZE * i);
   }
   
-  bitmap_set_multiple (swap_map, data->sector_idx, 1, false);
-  
-  /* Add the page to the process's address space. */
-  if (!install_page (data->upage, kpage, data->writable)) {
-    palloc_free_page (kpage);
-    return false; 
+  free_sector (data->sector_idx);
+
+  frame->is_pinned = false;
+  data->is_swapped = false;
+
+  if (!is_lock_held) {
+    release_syscall_lock ();
   }
 
   return true;
 }
 
-bool
+struct frame_data *
 swap_out (struct frame_data *frame)
-{  
-  bool success = false;
+{
+  frame->is_pinned = true;
+
+  if (!is_swap_init) {
+    swap_init ();
+    // printf("swap init\n");
+    is_swap_init = true;
+  }
+  
+  printf("swap out\n");
+
   struct sup_data *data = frame->sup_entry;
   switch (data->type) {
     case VM_ELF:
-      if (pagedir_is_dirty (data->owner->pagedir, data->upage)) {
-        swap_out_disk (frame, data);
-        remove_frame (frame);
-        data->type = VM_ANON;
-        pagedir_clear_page (data->owner->pagedir, data->upage);
-        success = true;
-      }
+      /*if dirty?*/
+      swap_out_disk (frame, data);
+      data->type = VM_ANON;
+      pagedir_clear_page (data->owner->pagedir, data->upage);
       break;
     case VM_FILE:
       if (pagedir_is_dirty (data->owner->pagedir, data->upage)) {
         file_write (data->file, frame->kaddr, data->page_read_bytes);
       }
-      remove_frame (frame);
       pagedir_clear_page (data->owner->pagedir, data->upage);
-      success = true;
       break;
     case VM_ANON:
       swap_out_disk (frame, data);
-      remove_frame (frame);
       pagedir_clear_page (data->owner->pagedir, data->upage);
-      success = true;
       break;
   }
 
-  return success;
+  data->is_swapped = true;
+
+  return frame;
 }
 
 static void
@@ -89,6 +132,7 @@ swap_out_disk (struct frame_data *frame, struct sup_data *data)
   lock_acquire (&swap_lock);
   size_t sector_idx = bitmap_scan_and_flip (swap_map, 0, 1, false);
   lock_release (&swap_lock);
+  printf("sector idx: %d\n", sector_idx);
   if (sector_idx == BITMAP_ERROR) {
     PANIC ("bitmap error");
   }
