@@ -33,9 +33,8 @@ swap_init (void)
 bool
 swap_in (uint8_t *kpage, struct sup_data *data)
 {
-  size_t sector_cnt = DIV_ROUND_UP (PGSIZE, BLOCK_SECTOR_SIZE);
-  for (size_t i = 0; i < sector_cnt; i++) {
-    block_read (swap_device, data->sector_idx + i, kpage + BLOCK_SECTOR_SIZE * i);
+  for (size_t i = 0; i < SECTOR_PER_PAGE; i++) {
+    block_read (swap_device, data->sector_idx * SECTOR_PER_PAGE + i, kpage + BLOCK_SECTOR_SIZE * i);
   }
   
   bitmap_set_multiple (swap_map, data->sector_idx, 1, false);
@@ -86,7 +85,6 @@ swap_out (struct frame_data *frame)
 static void
 swap_out_disk (struct frame_data *frame, struct sup_data *data)
 {
-  size_t sector_cnt = DIV_ROUND_UP (PGSIZE, BLOCK_SECTOR_SIZE);
   // printf("%d\n", data->page_read_bytes);
   lock_acquire (&swap_lock);
   size_t sector_idx = bitmap_scan_and_flip (swap_map, 0, 1, false);
@@ -95,7 +93,7 @@ swap_out_disk (struct frame_data *frame, struct sup_data *data)
     PANIC ("bitmap error");
   }
   data->sector_idx = sector_idx;
-  for (size_t i = 0; i < sector_cnt; i++) {
-    block_write (swap_device, sector_idx + i, frame->kaddr + BLOCK_SECTOR_SIZE * i);
+  for (size_t i = 0; i < SECTOR_PER_PAGE; i++) {
+    block_write (swap_device, sector_idx * SECTOR_PER_PAGE + i, frame->kaddr + BLOCK_SECTOR_SIZE * i);
   }
 }

@@ -42,6 +42,7 @@ create_frame (uint8_t *vaddr, struct sup_data *sp_data)
 void
 remove_frame (struct frame_data *frame)
 {
+  // printf("freeing frame: %p\n", frame->kaddr);
   list_remove (&frame->elem);
   palloc_free_page (frame->kaddr);
   free(frame);
@@ -75,28 +76,22 @@ select_victim_frame (void)
 
   if (!list_empty (&frame_table)) {
     while (victim == NULL) {
-      bool is_missed = false;
       struct list_elem *e;
       for (e = start; e != list_end (&frame_table); e = list_next (e)) {
         struct frame_data *frame = list_entry (e, struct frame_data, elem);
         struct sup_data *data = frame->sup_entry;
+        // printf("current frame: %p\n", frame->kaddr);
         if (!pagedir_is_accessed (data->owner->pagedir, data->upage)) {
-          pagedir_set_accessed (data->owner->pagedir, data->upage, true);
-          if (is_missed) {
-            struct list_elem *next = list_next(e);
-            if (next == list_end (&frame_table)) {
-              next = list_begin (&frame_table);
-            }
-            struct frame_data *next_frame = list_entry (e, struct frame_data, elem);
-            lru_start = next_frame;
+          struct list_elem *next = list_next(e);
+          if (next == list_end (&frame_table)) {
+            next = list_begin (&frame_table);
           }
+          struct frame_data *next_frame = list_entry (e, struct frame_data, elem);
+          lru_start = next_frame;
           victim = frame;
         }
         else {
           pagedir_set_accessed (data->owner->pagedir, data->upage, false);
-          if (!is_missed) {
-            is_missed = true;
-          }
         }
       }
 
@@ -104,24 +99,17 @@ select_victim_frame (void)
         struct frame_data *frame = list_entry (e, struct frame_data, elem);
         struct sup_data *data = frame->sup_entry;
         if (!pagedir_is_accessed (data->owner->pagedir, data->upage)) {
-          pagedir_set_accessed (data->owner->pagedir, data->upage, true);
-
-          if (is_missed) {
-            struct list_elem *next = list_next(e);
-            if (next == list_end (&frame_table)) {
-              next = list_begin (&frame_table);
-            }
-            struct frame_data *next_frame = list_entry (e, struct frame_data, elem);
-            lru_start = next_frame;
+          struct list_elem *next = list_next(e);
+          if (next == list_end (&frame_table)) {
+            next = list_begin (&frame_table);
           }
+          struct frame_data *next_frame = list_entry (e, struct frame_data, elem);
+          lru_start = next_frame;
 
           victim = frame;
         }
         else {
           pagedir_set_accessed (data->owner->pagedir, data->upage, false);
-          if (!is_missed) {
-            is_missed = true;
-          }
         }
       }
     }
