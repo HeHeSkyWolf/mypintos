@@ -209,7 +209,7 @@ handle_page_fault (void *fault_addr)
       struct frame_data *victim = select_victim_frame ();
       if (victim == NULL) {
         return false;
-      }  
+      }
       swap_out (victim);
       kpage = palloc_get_page (PAL_USER);
       if (kpage == NULL) {
