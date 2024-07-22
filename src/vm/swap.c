@@ -49,10 +49,9 @@ swap_in (uint8_t *kpage, struct sup_data *data)
   return true;
 }
 
-bool
+void
 swap_out (struct frame_data *frame)
 {  
-  bool success = false;
   struct sup_data *data = frame->sup_entry;
 
   // printf("swap out\n");
@@ -64,7 +63,6 @@ swap_out (struct frame_data *frame)
         remove_frame (frame);
         data->type = VM_ANON;
         pagedir_clear_page (data->owner->pagedir, data->upage);
-        success = true;
       }
       break;
     case VM_FILE:
@@ -73,17 +71,13 @@ swap_out (struct frame_data *frame)
       }
       remove_frame (frame);
       pagedir_clear_page (data->owner->pagedir, data->upage);
-      success = true;
       break;
     case VM_ANON:
       swap_out_disk (frame, data);
       remove_frame (frame);
       pagedir_clear_page (data->owner->pagedir, data->upage);
-      success = true;
       break;
   }
-
-  return success;
 }
 
 static void
