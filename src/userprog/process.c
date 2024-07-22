@@ -616,19 +616,18 @@ setup_stack (const char *file_name, void **esp)
         palloc_free_page (kpage);
     }
   if (success) {
-    struct sup_data *data = malloc (sizeof (struct sup_data));
-    data->owner = thread_current ();
-
-    data->file = NULL;
-    data->upage = ((uint8_t *) PHYS_BASE) - PGSIZE;
-    data->writable = false;
+    struct sup_data *data = create_sup_page (((uint8_t *) PHYS_BASE) - PGSIZE,
+                                             NULL, true, 0, 0, 0);
     data->type = VM_ELF;
-    /* needs to set up length of the stack */
+    hash_insert (&thread_current ()->sup_page_table, &data->hash_elem);
+    // printf("esp %p\n", *esp);
+
     struct frame_data *frame = create_frame (kpage, data);
     add_frame_to_table (frame);
     if (lru_start == NULL) {
       lru_start = frame;
     }
+    frame->is_pinned = false;
   }
   return success;
 }
