@@ -39,7 +39,7 @@ sup_page_free (struct hash_elem *e, void *aux UNUSED)
 }
 
 bool
-load_file (struct sup_data *data)
+load_file (void *upage, struct sup_data *data)
 {
   bool is_lock_held = syscall_lock_held_by_current_thread ();
   if (!is_lock_held) {
@@ -56,12 +56,13 @@ load_file (struct sup_data *data)
       return false;
     }
     frame = swap_out (victim);
-    frame->sup_entry = data;
     kpage = frame->kaddr;
+    // printf("evicted kaddr %p\n", kpage);
   }
   else {
     frame = create_frame (kpage, data);
     add_frame_to_table (frame);
+    // printf("added a new frame %p\n", kpage);
   }
 
   // printf("page fault vaddr: %d, %p\n", data->owner->tid, data->upage);
@@ -78,14 +79,17 @@ load_file (struct sup_data *data)
   memset (kpage + data->page_read_bytes, 0, data->page_zero_bytes);
 
   /* Add the page to the process's address space. */
-  if (!install_page_by_thread (data->owner, data->upage, kpage, data->writable) || frame == NULL) 
+  if (!install_page_by_thread (data->owner, upage, kpage, data->writable) || frame == NULL) 
     {
       palloc_free_page (kpage);
+      // errors
       release_syscall_lock ();
       return false; 
     }
   
   frame->is_pinned = false;
+  frame->vaddr = upage;
+  frame->sup_entry = data;
 
   if (!is_lock_held) {
     release_syscall_lock ();

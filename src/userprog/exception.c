@@ -164,6 +164,7 @@ page_fault (struct intr_frame *f)
   acquire_exception_lock ();
   if (not_present) {
     // printf("fault addr: %p\n", fault_addr);
+    // printf("page fault #: %lld\n", page_fault_cnt);
     bool success = handle_page_fault (fault_addr);
     if (success) {
       release_exception_lock ();
@@ -196,11 +197,12 @@ handle_page_fault (void *fault_addr)
   }
   else {
     // printf("get a frame\n");
+    // printf("data upage: %p\n", data->upage);
     bool success = false;
 
     switch (data->type) {
       case VM_ELF:
-        success = load_file (data);
+        success = load_file (rounded_addr, data);
         if (!success) {
           return false;
         }
@@ -209,7 +211,7 @@ handle_page_fault (void *fault_addr)
         break;
       case VM_ANON:
         success = swap_in (data);
-        printf("swap-in\n");
+        // printf("swap-in\n");
         if (!success) {
           // printf("success?\n");
           return false;

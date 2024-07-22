@@ -33,4 +33,4 @@ struct sup_data *create_sup_page (uint8_t *upage, struct file *file,
                                   bool writable, off_t ofs, 
                                   size_t page_read_bytes, 
                                   size_t page_zero_bytes);
-bool load_file (struct sup_data *data);
+bool load_file (void *upage, struct sup_data *data);

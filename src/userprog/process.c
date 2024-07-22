@@ -627,6 +627,8 @@ setup_stack (const char *file_name, void **esp)
     /* needs to set up length of the stack */
     struct frame_data *frame = create_frame (kpage, data);
     add_frame_to_table (frame);
+    // printf("stack kpage %p\n", frame->kaddr);
+    // frame->is_pinned = false;
   }
   return success;
 }

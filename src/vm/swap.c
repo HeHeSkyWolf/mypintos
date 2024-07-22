@@ -32,7 +32,7 @@ swap_init (void)
   swap_device = block_get_role (BLOCK_SWAP);
   if (swap_device == NULL)
     PANIC ("couldn't open swap device");
-  size_t swap_map_size = (block_size (swap_device) * BLOCK_SECTOR_SIZE) / PGSIZE;
+  size_t swap_map_size = block_size (swap_device) / SECTOR_PER_PAGE;
   swap_map = bitmap_create (swap_map_size);
   if (swap_map == NULL)
     PANIC ("bitmap creation failed--swap device is too large");
@@ -64,8 +64,9 @@ swap_in (struct sup_data *data)
     add_frame_to_table (frame);
   }
 
+  struct thread* cur = thread_current ();
   /* Add the page to the process's address space. */
-  if (!install_page_by_thread (data->owner, data->upage, kpage, data->writable) || frame == NULL)
+  if (!install_page_by_thread (cur, data->upage, kpage, data->writable) || frame == NULL)
   {
     palloc_free_page (kpage);
     return false; 
@@ -79,6 +80,7 @@ swap_in (struct sup_data *data)
 
   frame->is_pinned = false;
   data->is_swapped = false;
+  frame->sup_entry = data;
 
   if (!is_lock_held) {
     release_syscall_lock ();
@@ -98,7 +100,7 @@ swap_out (struct frame_data *frame)
     is_swap_init = true;
   }
   
-  printf("swap out\n");
+  // printf("swap out\n");
 
   struct sup_data *data = frame->sup_entry;
   switch (data->type) {
@@ -106,17 +108,15 @@ swap_out (struct frame_data *frame)
       /*if dirty?*/
       swap_out_disk (frame, data);
       data->type = VM_ANON;
-      pagedir_clear_page (data->owner->pagedir, data->upage);
+      /* return NULL if ELF needs to be keep, while loop on getting a free*/
       break;
     case VM_FILE:
       if (pagedir_is_dirty (data->owner->pagedir, data->upage)) {
         file_write (data->file, frame->kaddr, data->page_read_bytes);
       }
-      pagedir_clear_page (data->owner->pagedir, data->upage);
       break;
     case VM_ANON:
       swap_out_disk (frame, data);
-      pagedir_clear_page (data->owner->pagedir, data->upage);
       break;
   }
 
@@ -132,12 +132,16 @@ swap_out_disk (struct frame_data *frame, struct sup_data *data)
   lock_acquire (&swap_lock);
   size_t sector_idx = bitmap_scan_and_flip (swap_map, 0, 1, false);
   lock_release (&swap_lock);
-  printf("sector idx: %d\n", sector_idx);
+
+  // printf("sector idx: %d\n", sector_idx);
+
   if (sector_idx == BITMAP_ERROR) {
     PANIC ("bitmap error");
   }
-  data->sector_idx = sector_idx;
+
   for (size_t i = 0; i < SECTOR_PER_PAGE; i++) {
     block_write (swap_device, sector_idx * SECTOR_PER_PAGE + i, frame->kaddr + BLOCK_SECTOR_SIZE * i);
   }
+  
+  data->sector_idx = sector_idx;
 }

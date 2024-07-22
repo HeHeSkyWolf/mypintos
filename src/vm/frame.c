@@ -29,21 +29,21 @@ max_frame (void)
   if (max < list_size (&frame_table)) {
     max = list_size (&frame_table);
   }
-  printf("Max frame table size: %d\n", max);
+  // printf("Max frame table size: %d\n", max);
 }
 
 void
 add_frame_to_table (struct frame_data *frame)
 {
   list_push_back (&frame_table, &frame->elem);
-  // max_frame ();
+  max_frame ();
 }
 
 static void
 count_evict (void)
 {
   cnt++;
-  printf("cnt: %d\n", cnt);
+  printf("evict cnt: %d\n", cnt);
 }
 
 struct frame_data *
@@ -101,23 +101,32 @@ select_victim_frame (void)
     }
 
     struct frame_data *frame = list_entry (lru_start, struct frame_data, elem);
-    struct sup_data *data = frame->sup_entry;
     
     while (victim == NULL) {
       // printf("current frame: %p\n", frame->kaddr);
+      // printf("page upage %p\n", data->upage);
+
       if (!frame->is_pinned) {
-        if (!pagedir_is_accessed (data->owner->pagedir, data->upage)) {
+        // void * k = pagedir_get_page (data->owner->pagedir, data->upage);
+        // printf("page %p\n", k);
+
+        if (!pagedir_is_accessed (frame->owner->pagedir, frame->vaddr)) {
           struct list_elem *next = list_next(lru_start);
           if (next == list_end (&frame_table)) {
             next = list_begin (&frame_table);
           }
           
           lru_start = next;
+          // count_evict ();
           victim = frame;
-          count_evict ();
+          // diff for page-linear
+          // pagedir_clear_page (victim->owner->pagedir, victim->vaddr);
+          struct sup_data *data = victim->sup_entry;
+          pagedir_clear_page (victim->owner->pagedir, data->upage);
+          break;
         }
         else {
-          pagedir_set_accessed (data->owner->pagedir, data->upage, false);
+          pagedir_set_accessed (frame->owner->pagedir, frame->vaddr, false);
         }
       }
 
@@ -126,22 +135,7 @@ select_victim_frame (void)
         lru_start = list_begin (&frame_table);
       }
       frame = list_entry (lru_start, struct frame_data, elem);
-      data = frame->sup_entry;
     }
   }
   return victim;
 }
-
-// struct frame_data *
-// select_victim_frame (void)
-// {
-//   struct frame_data *frame = NULL;
-
-//   if (!list_empty (&frame_table)) {
-//     struct list_elem *e;
-//     for (e = list_begin (&frame_table); e != list_end (&frame_table); e = list_next (e)) {
-      
-//     }
-//   }
-//   return frame;
-// }
