@@ -227,6 +227,7 @@ handle_page_fault (void *fault_addr)
     switch (data->type) {
       case VM_ELF:
         success = load_file (kpage, data);
+        // printf("load file\n");
         if (!success) {
           return false;
         }
@@ -235,6 +236,7 @@ handle_page_fault (void *fault_addr)
         break;
       case VM_ANON:
         success = swap_in (kpage, data);
+        // printf("swap in\n");
         if (!success) {
           return false;
         }

@@ -25,7 +25,8 @@ swap_init (void)
   swap_device = block_get_role (BLOCK_SWAP);
   if (swap_device == NULL)
     PANIC ("couldn't open swap device");
-  swap_map = bitmap_create (block_size (swap_device));
+  size_t swap_map_size = block_size (swap_device) / SECTOR_PER_PAGE;
+  swap_map = bitmap_create (swap_map_size);
   if (swap_map == NULL)
     PANIC ("bitmap creation failed--swap device is too large");
 }
@@ -53,6 +54,9 @@ swap_out (struct frame_data *frame)
 {  
   bool success = false;
   struct sup_data *data = frame->sup_entry;
+
+  // printf("swap out\n");
+
   switch (data->type) {
     case VM_ELF:
       if (pagedir_is_dirty (data->owner->pagedir, data->upage)) {
