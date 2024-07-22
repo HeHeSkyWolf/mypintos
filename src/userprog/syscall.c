@@ -403,6 +403,8 @@ syscall_handler (struct intr_frame *f UNUSED)
   unsigned int syscall_nr;
   copy_in (&syscall_nr, f->esp, sizeof syscall_nr);
 
+  thread_current ()->interrupt_esp = f->esp;
+
   struct thread *cur = thread_current ();
   // printf ("%d   ***syscall number: %u\n", cur->tid, syscall_nr);
 

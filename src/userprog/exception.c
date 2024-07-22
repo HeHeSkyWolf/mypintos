@@ -17,7 +17,7 @@ static long long page_fault_cnt;
 
 static void kill (struct intr_frame *);
 static void page_fault (struct intr_frame *);
-static bool handle_page_fault (void *fault_addr);
+static bool handle_page_fault (void *fault_addr, void *esp);
 
 /* Registers handlers for interrupts that can be caused by user
    programs.
@@ -157,10 +157,22 @@ page_fault (struct intr_frame *f)
   user = (f->error_code & PF_U) != 0;
   // printf("fault addr: %p\n", fault_addr);
   acquire_exception_lock ();
+  void *esp;
+  if (user) {
+    if (!is_user_vaddr (fault_addr)) {
+      release_exception_lock ();
+      kernel_exit (-1);
+    }
+    esp = f->esp;
+  }
+  else {
+    esp = thread_current ()->interrupt_esp;
+  }
+
   if (not_present) {
     if (1) {
       // printf("fault addr: %p\n", fault_addr);
-      bool success = handle_page_fault (fault_addr);
+      bool success = handle_page_fault (fault_addr, esp);
       if (success) {
         release_exception_lock ();
         return;
@@ -182,7 +194,7 @@ page_fault (struct intr_frame *f)
 }
 
 static bool
-handle_page_fault (void *fault_addr)
+handle_page_fault (void *fault_addr, void *esp)
 {
   if (!is_user_vaddr (fault_addr)) {
     return false;
@@ -196,12 +208,45 @@ handle_page_fault (void *fault_addr)
   struct thread *cur = thread_current ();
   void *rounded_addr = pg_round_down (fault_addr);
   struct sup_data *data = sup_page_lookup (rounded_addr, cur->sup_page_table);
+  // printf("round addr: %p\n", rounded_addr);
 
   if (data == NULL) {
-    return false;
+    if (fault_addr < esp - 32) {
+      return false;
+    }
+    
+    if ((size_t)(PHYS_BASE - rounded_addr) > MAX_STACK_SIZE) {
+      return false;
+    }
+
+    uint8_t *kpage = palloc_get_page (PAL_USER);
+    
+    /* Get a page of memory. */
+    if (kpage == NULL) {
+      struct frame_data *victim = select_victim_frame ();
+      if (victim == NULL) {
+        return false;
+      }
+      swap_out (victim);
+      kpage = palloc_get_page (PAL_USER);
+      if (kpage == NULL) {
+        return false;
+      }
+    }
+    struct frame_data *frame = create_frame (kpage, data);
+    add_frame_to_table (frame);
+    if (lru_start == NULL) {
+      lru_start = frame;
+    }
+
+    bool success = grow_stack (kpage, rounded_addr);
+    if (!success) {
+      return false;
+    }
+
+    return true;
   }
   else {
-    // printf("data upage: %p\n", data->upage);
     uint8_t *kpage = palloc_get_page (PAL_USER);
     
     /* Get a page of memory. */
@@ -243,6 +288,7 @@ handle_page_fault (void *fault_addr)
         break;      
     };
     frame->is_pinned = false;
+    return true;
   }
-  return true;
+  return false;
 }

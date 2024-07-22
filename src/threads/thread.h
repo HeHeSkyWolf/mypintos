@@ -107,6 +107,7 @@ struct thread
 
     /* VM */
     struct hash sup_page_table;
+    void *interrupt_esp;
 
 #ifdef USERPROG
     /* Owned by userprog/process.c. */

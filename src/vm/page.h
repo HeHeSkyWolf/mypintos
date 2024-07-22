@@ -2,6 +2,8 @@
 #include <hash.h>
 #include "filesys/file.h"
 
+#define MAX_STACK_SIZE 8 * 1024 * 1024
+
 enum file_type {
   VM_ELF,
   VM_FILE,
@@ -33,3 +35,4 @@ struct sup_data *create_sup_page (uint8_t *upage, struct file *file,
                                   size_t page_read_bytes, 
                                   size_t page_zero_bytes);
 bool load_file (uint8_t *kpage, struct sup_data *data);
+bool grow_stack (uint8_t *kpage, void *rounded_addr);

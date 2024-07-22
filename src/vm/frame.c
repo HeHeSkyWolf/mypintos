@@ -107,17 +107,3 @@ select_victim_frame (void)
   }
   return victim;
 }
-
-// struct frame_data *
-// select_victim_frame (void)
-// {
-//   struct frame_data *frame = NULL;
-
-//   if (!list_empty (&frame_table)) {
-//     struct list_elem *e;
-//     for (e = list_begin (&frame_table); e != list_end (&frame_table); e = list_next (e)) {
-      
-//     }
-//   }
-//   return frame;
-// }

@@ -11,6 +11,7 @@
 #include "userprog/process.h"
 #include "userprog/syscall.h"
 #include "vm/page.h"
+#include "vm/frame.h"
 
 /* Returns the page containing the given virtual address,
    or a null pointer if no such page exists. */
@@ -86,4 +87,29 @@ create_sup_page (uint8_t *upage, struct file *file, bool writable, off_t ofs,
   data->sector_idx = 0;
 
   return data;
+}
+
+bool
+grow_stack (uint8_t *kpage, void *rounded_addr)
+{
+  struct sup_data *data = create_sup_page (rounded_addr, NULL, true, 0, 0, 0);
+  data->type = VM_ELF;
+
+  /* Add the page to the process's address space. */
+  if (!install_page (data->upage, kpage, data->writable)) {
+    free(data);
+    palloc_free_page (kpage);
+    return false; 
+  }
+
+  struct frame_data *frame = create_frame (kpage, data);
+  add_frame_to_table (frame);
+  if (lru_start == NULL) {
+    lru_start = frame;
+  }
+
+  hash_insert (&thread_current ()->sup_page_table, &data->hash_elem);
+  frame->is_pinned = false;
+
+  return true;
 }
