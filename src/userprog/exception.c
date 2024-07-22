@@ -242,6 +242,7 @@ handle_page_fault (void *fault_addr)
         }
         break;      
     };
+    frame->is_pinned = false;
   }
   return true;
 }
