@@ -3,7 +3,7 @@
 struct frame_data {
   struct thread *owner;
   uint8_t *kaddr;
-  struct sup_data* sup_entry;
+  struct sup_data *sup_entry;
   
   struct list_elem elem;
   

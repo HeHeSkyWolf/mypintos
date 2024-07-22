@@ -14,6 +14,8 @@
 #include "filesys/file.h"
 #include "filesys/filesys.h"
 
+#include "vm/page.h"
+
 static struct lock syscall_lock;
 
 static void syscall_handler (struct intr_frame *);
@@ -153,6 +155,8 @@ kernel_exit (int status)
   cur->process->return_status = status;
   close_all_opened_file (cur->process);
   file_close (cur->running_file);
+  hash_destroy (&cur->sup_page_table, sup_page_free);
+
   
   thread_exit ();
 }
@@ -176,6 +180,8 @@ syscall_exit (struct intr_frame *f UNUSED)
   f->eax = status;
   close_all_opened_file (cur->process);
   file_close (cur->running_file);
+  hash_destroy (&cur->sup_page_table, sup_page_free);
+  // clear_frame_table ();
   
   thread_exit ();
 }
@@ -188,8 +194,10 @@ syscall_exec (struct intr_frame *f UNUSED) {
 
   const char *cmd_line = (const char *) args[0];
 
+  acquire_syscall_lock ();
   tid_t tid = process_execute (cmd_line);
   f->eax = tid;
+  release_syscall_lock ();
 }
 
 static void
@@ -398,7 +406,9 @@ syscall_handler (struct intr_frame *f UNUSED)
 {
   unsigned int syscall_nr;
   copy_in (&syscall_nr, f->esp, sizeof syscall_nr);
-  // printf ("%d   ***syscall number: %u\n", thread_current()->tid, syscall_nr);
+
+  struct thread *cur = thread_current ();
+  printf ("%d   ***syscall number: %u\n", cur->tid, syscall_nr);
 
   switch (syscall_nr) {
     case SYS_HALT:
