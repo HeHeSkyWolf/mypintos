@@ -156,11 +156,12 @@ page_fault (struct intr_frame *f)
   write = (f->error_code & PF_W) != 0;
   user = (f->error_code & PF_U) != 0;
   // printf("fault addr: %p\n", fault_addr);
-  acquire_exception_lock ();
+  // acquire_exception_lock ();
   void *esp;
   if (user) {
     if (!is_user_vaddr (fault_addr)) {
-      release_exception_lock ();
+      // release_exception_lock ();
+      // printf("invalid user addr exception error\n");
       kernel_exit (-1);
     }
     esp = f->esp;
@@ -174,12 +175,19 @@ page_fault (struct intr_frame *f)
       // printf("fault addr: %p\n", fault_addr);
       bool success = handle_page_fault (fault_addr, esp);
       if (success) {
-        release_exception_lock ();
+        // release_exception_lock ();
         return;
       }
     }
   }
-  release_exception_lock ();
+  // release_exception_lock ();
+  // printf("exception error\n");
+  // printf ("Page fault at %p: %s error %s page in %s context.\n",
+  //         fault_addr,
+  //         not_present ? "not present" : "rights violation",
+  //         write ? "writing" : "reading",
+  //         user ? "user" : "kernel");
+  // kill (f);
   kernel_exit (-1);
 
 //   /* To implement virtual memory, delete the rest of the function
@@ -196,10 +204,6 @@ page_fault (struct intr_frame *f)
 static bool
 handle_page_fault (void *fault_addr, void *esp)
 {
-  if (!is_user_vaddr (fault_addr)) {
-    return false;
-  }
-
   if (!is_swap_init) {
     swap_init ();
     is_swap_init = true;
@@ -212,10 +216,13 @@ handle_page_fault (void *fault_addr, void *esp)
 
   if (data == NULL) {
     if (fault_addr < esp - 32) {
+      // printf("fail to grow stack #1\n");
       return false;
     }
     
     if ((size_t)(PHYS_BASE - rounded_addr) > MAX_STACK_SIZE) {
+      printf("%p %p\n", PHYS_BASE, rounded_addr);
+      // printf("fail to grow stack #2\n");
       return false;
     }
 
@@ -225,11 +232,13 @@ handle_page_fault (void *fault_addr, void *esp)
     if (kpage == NULL) {
       struct frame_data *victim = select_victim_frame ();
       if (victim == NULL) {
+        // printf("fail to select victim #1\n");
         return false;
       }
       swap_out (victim);
       kpage = palloc_get_page (PAL_USER);
       if (kpage == NULL) {
+        // printf("fail to get page #1\n");
         return false;
       }
     }
@@ -241,6 +250,7 @@ handle_page_fault (void *fault_addr, void *esp)
 
     bool success = grow_stack (kpage, rounded_addr);
     if (!success) {
+      // printf("fail to grow stack #3\n");
       return false;
     }
 
@@ -253,11 +263,13 @@ handle_page_fault (void *fault_addr, void *esp)
     if (kpage == NULL) {
       struct frame_data *victim = select_victim_frame ();
       if (victim == NULL) {
+        // printf("fail to select victim #2\n");
         return false;
       }
       swap_out (victim);
       kpage = palloc_get_page (PAL_USER);
       if (kpage == NULL) {
+        // printf("fail to get page #2\n");
         return false;
       }
     }
@@ -272,8 +284,8 @@ handle_page_fault (void *fault_addr, void *esp)
     switch (data->type) {
       case VM_ELF:
         success = load_file (kpage, data);
-        // printf("load file\n");
         if (!success) {
+          // printf("fail to load file\n");
           return false;
         }
         break;
@@ -281,8 +293,8 @@ handle_page_fault (void *fault_addr, void *esp)
         break;
       case VM_ANON:
         success = swap_in (kpage, data);
-        // printf("swap in\n");
         if (!success) {
+          // printf("fail to swap in\n");
           return false;
         }
         break;      

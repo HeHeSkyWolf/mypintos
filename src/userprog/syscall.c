@@ -150,7 +150,9 @@ kernel_exit (int status)
 {
   struct thread *cur = thread_current ();
 
-  printf("%s: exit(%d)\n", cur->name, status);
+  printf ("%s: exit(%d)\n", cur->name, status);
+
+  // printf("kernel exit\n");
   
   cur->process->return_status = status;
   close_all_opened_file (cur->process);
@@ -173,11 +175,23 @@ syscall_exit (struct intr_frame *f UNUSED)
   
   struct thread *cur = thread_current ();
 
-  printf("%s: exit(%d)\n", cur->name, status);
+  printf ("%s: exit(%d)\n", cur->name, status);
+  
+  // printf("normal exit\n");
+
+  bool is_lock_held = syscall_lock_held_by_current_thread ();
+  if (!is_lock_held) {
+    acquire_syscall_lock ();
+  }
+
   cur->process->return_status = status;
   f->eax = status;
   close_all_opened_file (cur->process);
   file_close (cur->running_file);
+
+  if (!is_lock_held) {
+    release_syscall_lock ();
+  }
   
   thread_exit ();
 }
@@ -190,10 +204,19 @@ syscall_exec (struct intr_frame *f UNUSED) {
 
   const char *cmd_line = (const char *) args[0];
 
-  // acquire_syscall_lock ();
+  // printf("%d syscall exec\n", thread_current()->tid);
+
+  bool is_lock_held = syscall_lock_held_by_current_thread ();
+  if (!is_lock_held) {
+    acquire_syscall_lock ();
+  }
+
   tid_t tid = process_execute (cmd_line);
   f->eax = tid;
-  // release_syscall_lock ();
+  
+  if (!is_lock_held) {
+    release_syscall_lock ();
+  }
 }
 
 static void
@@ -201,6 +224,8 @@ syscall_wait (struct intr_frame *f UNUSED) {
   int args[1];
   copy_in (args, (uint32_t *) f->esp + 1, sizeof *args);
   tid_t tid = (tid_t) args[0];
+
+  // printf("%d syscall wait\n", thread_current()->tid);
 
   int status = process_wait (tid);
   f->eax = status;
@@ -216,6 +241,8 @@ syscall_create (struct intr_frame *f UNUSED)
   const char *file = (const char *) args[0];
   off_t initial_size = (off_t) args[1];
 
+  // printf("%d syscall create\n", thread_current()->tid);
+
   acquire_syscall_lock ();
   bool success = filesys_create (file, initial_size);
   f->eax = success;
@@ -230,6 +257,8 @@ syscall_remove (struct intr_frame *f UNUSED)
   valid_uaddr ((void *) args[0]);
 
   const char *file = (const char *) args[0];
+
+  // printf("%d syscall remove\n", thread_current()->tid);
 
   acquire_syscall_lock ();
   bool success = filesys_remove (file);
@@ -248,10 +277,13 @@ syscall_open (struct intr_frame *f UNUSED)
 
   struct file *file = filesys_open (file_name);
 
+  // printf("%d syscall open\n", thread_current()->tid);
+
   acquire_syscall_lock ();
   if (file == NULL) {
     f->eax = -1;
-  } else {
+  } 
+  else {
     struct thread *cur = thread_current ();
     cur->next_fd += 1;
     struct file_open *f_open = malloc (sizeof (struct file_open));
@@ -270,6 +302,8 @@ syscall_filesize (struct intr_frame *f UNUSED)
   int args[1];
   copy_in (args, (uint32_t *) f->esp + 1, sizeof *args);
   int fd = (int) args[0];
+
+  // printf("%d syscall filesize\n", thread_current()->tid);
   
   acquire_syscall_lock ();
   struct file_open *f_opened = find_file_by_fd (thread_current()->process, fd);
@@ -293,6 +327,8 @@ syscall_read (struct intr_frame *f UNUSED)
   unsigned size = (unsigned) args[2];
 
   valid_uaddr (buffer);
+
+  // printf("%d syscall read\n", thread_current()->tid);
 
   acquire_syscall_lock ();
   if (fd == STDIN_FILENO) {
@@ -327,6 +363,8 @@ syscall_write (struct intr_frame *f UNUSED)
 
   valid_uaddr (buffer);
 
+  // printf("%d syscall write\n", thread_current()->tid);
+
   acquire_syscall_lock ();
   if (fd == STDOUT_FILENO) {
     putbuf (buffer, size);
@@ -352,6 +390,8 @@ syscall_seek (struct intr_frame *f UNUSED)
   int fd = (int) args[0];
   unsigned position = (unsigned) args[1];
 
+  // printf("%d syscall seek\n", thread_current()->tid);
+
   acquire_syscall_lock ();
   struct file_open *f_opened = find_file_by_fd (thread_current()->process, fd);
   if (f_opened != NULL) {
@@ -367,6 +407,8 @@ syscall_tell (struct intr_frame *f UNUSED)
   copy_in (args, (uint32_t *) f->esp + 1, sizeof *args);
 
   int fd = (int) args[0];
+
+  // printf("%d syscall tell\n", thread_current()->tid);
 
   acquire_syscall_lock ();
   struct file_open *f_opened = find_file_by_fd (thread_current()->process, fd);
@@ -385,6 +427,8 @@ syscall_close (struct intr_frame *f UNUSED)
   int args[1];
   copy_in (args, (uint32_t *) f->esp + 1, sizeof *args);
   int fd = (int) args[0];
+
+  // printf("%d syscall close\n", thread_current()->tid);
 
   acquire_syscall_lock ();
   struct thread *cur = thread_current ();
@@ -405,7 +449,7 @@ syscall_handler (struct intr_frame *f UNUSED)
 
   thread_current ()->interrupt_esp = f->esp;
 
-  struct thread *cur = thread_current ();
+  // struct thread *cur = thread_current ();
   // printf ("%d   ***syscall number: %u\n", cur->tid, syscall_nr);
 
   switch (syscall_nr) {
