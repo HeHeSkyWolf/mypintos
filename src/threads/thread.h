@@ -107,7 +107,11 @@ struct thread
 
     /* VM */
     struct hash sup_page_table;
-    void *interrupt_esp;
+    void *interrupt_esp; /* for grow stack */
+    struct hash mmap_table; /* mmap */
+    int next_mapid;
+
+
 
 #ifdef USERPROG
     /* Owned by userprog/process.c. */

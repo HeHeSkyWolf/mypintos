@@ -221,7 +221,7 @@ handle_page_fault (void *fault_addr, void *esp)
     }
     
     if ((size_t)(PHYS_BASE - rounded_addr) > MAX_STACK_SIZE) {
-      printf("%p %p\n", PHYS_BASE, rounded_addr);
+      // printf("%p %p\n", PHYS_BASE, rounded_addr);
       // printf("fail to grow stack #2\n");
       return false;
     }
@@ -290,6 +290,11 @@ handle_page_fault (void *fault_addr, void *esp)
         }
         break;
       case VM_FILE:
+        success = load_file (kpage, data);
+        if (!success) {
+          // printf("fail to load mapped file\n");
+          return false;
+        }
         break;
       case VM_ANON:
         success = swap_in (kpage, data);

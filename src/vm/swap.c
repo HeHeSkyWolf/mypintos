@@ -93,7 +93,7 @@ swap_out (struct frame_data *frame)
       break;
     case VM_FILE:
       if (pagedir_is_dirty (data->owner->pagedir, data->upage)) {
-        file_write (data->file, frame->kaddr, data->page_read_bytes);
+        file_write_at (data->file, frame->kaddr, data->page_read_bytes, data->offset);
       }
       remove_frame (frame);
       pagedir_clear_page (data->owner->pagedir, data->upage);

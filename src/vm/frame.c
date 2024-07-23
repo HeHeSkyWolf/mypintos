@@ -35,7 +35,6 @@ create_frame (uint8_t *vaddr, struct sup_data *sp_data)
   //???? for eviction
   data->is_pinned = true;
   
-  /* size of frame? pfn? */
   return data;
 }
 
@@ -67,6 +66,23 @@ clear_frame_table (void)
       }
     }
   }
+}
+
+struct frame_data *
+find_frame (struct thread *t, uint8_t *upage)
+{
+  struct frame_data *result = NULL;
+
+  if (!list_empty (&frame_table)) {
+    struct list_elem *e;
+    for (e = list_begin (&frame_table); e != list_end (&frame_table); e = list_next (e)) {
+      struct frame_data *frame = list_entry (e, struct frame_data, elem);
+      if (frame->owner->tid == t->tid && frame->sup_entry->upage == upage) {
+        return frame;
+      }
+    }
+  }
+  return result;
 }
 
 struct frame_data *

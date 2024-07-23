@@ -125,6 +125,7 @@ start_process (void *file_name_)
   bool success;
 
   hash_init (&thread_current ()->sup_page_table, page_hash, page_less, NULL);
+  hash_init (&thread_current ()->mmap_table, mmap_hash, mmap_less, NULL);
 
   /* Initialize interrupt frame and load executable. */
   memset (&if_, 0, sizeof if_);
@@ -196,6 +197,7 @@ process_exit (void)
   uint32_t *pd;
 
   hash_destroy (&cur->sup_page_table, sup_page_free);
+  hash_destroy (&cur->mmap_table, mmap_free);
   clear_frame_table ();
 
   /* Destroy the current process's page directory and switch back

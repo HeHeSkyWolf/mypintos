@@ -19,3 +19,4 @@ struct frame_data *create_frame (uint8_t *vaddr, struct sup_data *sp_data);
 void clear_frame_table (void);
 void remove_frame (struct frame_data *frame);
 struct frame_data *select_victim_frame (void);
+struct frame_data *find_frame (struct thread *t, uint8_t *upage);
