@@ -5,6 +5,7 @@
 #include <debug.h>
 #include <list.h>
 #include <hash.h>
+#include "threads/thread.h"
 
 /* Map region identifier. */
 typedef int mapid_t;
@@ -33,5 +34,7 @@ bool mmap_less (const struct hash_elem *a_, const struct hash_elem *b_,
                        void *aux UNUSED);
 void mmap_free (struct hash_elem *hash_e, void *aux UNUSED);
 struct mmaped_file *create_mmap_file (void);
+
+void close_all_opened_file (struct process *p);
 
 #endif /* userprog/syscall.h */
