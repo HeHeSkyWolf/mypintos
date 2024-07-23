@@ -49,7 +49,8 @@ remove_frame (struct frame_data *frame)
 }
 
 void
-clear_frame_table (void) {
+clear_frame_table (void)
+{
   // show I free all the page that's owned by the current thread when exiting
   // or kernel auto do that and I just need to free the frames that owned by
   // current thread ?
@@ -58,7 +59,11 @@ clear_frame_table (void) {
     for (e = list_begin (&frame_table); e != list_end (&frame_table); e = list_next (e)) {
       struct frame_data *frame = list_entry (e, struct frame_data, elem);
       if (frame->owner->tid == thread_current ()->tid) {
-        frame->is_owned = false;
+        e = list_prev (e);
+        if (e == list_head (&frame_table))
+          return;
+        list_remove (&frame->elem);
+        free(frame);
       }
     }
   }

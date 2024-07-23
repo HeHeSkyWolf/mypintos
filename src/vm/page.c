@@ -11,7 +11,7 @@
 #include "userprog/process.h"
 #include "userprog/syscall.h"
 #include "vm/page.h"
-#include "vm/frame.h"
+#include "vm/swap.h"
 
 /* Returns the page containing the given virtual address,
    or a null pointer if no such page exists. */
@@ -35,6 +35,11 @@ void
 sup_page_free (struct hash_elem *e, void *aux UNUSED)
 {
   struct sup_data *data = hash_entry (e, struct sup_data, hash_elem);
+  
+  if (data->is_swapped) {
+    free_swapped_sup (data->sector_idx);
+  }
+
   free (data);
 }
 
@@ -53,7 +58,9 @@ load_file (uint8_t *kpage, struct sup_data *data)
       (int) data->page_read_bytes)
     {
       palloc_free_page (kpage);
-      release_syscall_lock ();
+      if (!is_lock_held) {
+        release_syscall_lock ();
+      }
       return false; 
     }
   memset (kpage + data->page_read_bytes, 0, data->page_zero_bytes);
@@ -62,7 +69,9 @@ load_file (uint8_t *kpage, struct sup_data *data)
   if (!install_page (data->upage, kpage, data->writable)) 
     {
       palloc_free_page (kpage);
-      release_syscall_lock ();
+      if (!is_lock_held) {
+        release_syscall_lock ();
+      }
       return false; 
     }
 
@@ -92,6 +101,11 @@ create_sup_page (uint8_t *upage, struct file *file, bool writable, off_t ofs,
 bool
 grow_stack (uint8_t *kpage, void *rounded_addr)
 {
+  bool is_lock_held = syscall_lock_held_by_current_thread ();
+  if (!is_lock_held) {
+    acquire_syscall_lock ();
+  }
+
   struct sup_data *data = create_sup_page (rounded_addr, NULL, true, 0, 0, 0);
   data->type = VM_ELF;
 
@@ -99,6 +113,9 @@ grow_stack (uint8_t *kpage, void *rounded_addr)
   if (!install_page (data->upage, kpage, data->writable)) {
     free(data);
     palloc_free_page (kpage);
+    if (!is_lock_held) {
+      release_syscall_lock ();
+    }
     return false; 
   }
 
@@ -111,5 +128,8 @@ grow_stack (uint8_t *kpage, void *rounded_addr)
   hash_insert (&thread_current ()->sup_page_table, &data->hash_elem);
   frame->is_pinned = false;
 
+  if (!is_lock_held) {
+    release_syscall_lock ();
+  }
   return true;
 }

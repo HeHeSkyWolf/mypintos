@@ -10,6 +10,7 @@
 #include "threads/vaddr.h"
 #include "userprog/pagedir.h"
 #include "userprog/process.h"
+#include "userprog/syscall.h"
 #include "vm/page.h"
 
 static struct block *swap_device;
@@ -31,9 +32,20 @@ swap_init (void)
     PANIC ("bitmap creation failed--swap device is too large");
 }
 
+void
+free_swapped_sup (size_t sector_idx)
+{
+  bitmap_set_multiple (swap_map, sector_idx, 1, false);
+}
+
 bool
 swap_in (uint8_t *kpage, struct sup_data *data)
 {
+  bool is_lock_held = syscall_lock_held_by_current_thread ();
+  if (!is_lock_held) {
+    acquire_syscall_lock ();
+  }
+
   for (size_t i = 0; i < SECTOR_PER_PAGE; i++) {
     block_read (swap_device, data->sector_idx * SECTOR_PER_PAGE + i, kpage + BLOCK_SECTOR_SIZE * i);
   }
@@ -42,8 +54,17 @@ swap_in (uint8_t *kpage, struct sup_data *data)
   
   /* Add the page to the process's address space. */
   if (!install_page (data->upage, kpage, data->writable)) {
+    if (!is_lock_held) {
+      release_syscall_lock ();
+    }
     palloc_free_page (kpage);
     return false; 
+  }
+
+  data->is_swapped = false;
+
+  if (!is_lock_held) {
+    release_syscall_lock ();
   }
 
   return true;
@@ -52,6 +73,11 @@ swap_in (uint8_t *kpage, struct sup_data *data)
 void
 swap_out (struct frame_data *frame)
 {  
+  bool is_lock_held = syscall_lock_held_by_current_thread ();
+  if (!is_lock_held) {
+    acquire_syscall_lock ();
+  }
+
   struct sup_data *data = frame->sup_entry;
 
   // printf("swap out\n");
@@ -77,6 +103,12 @@ swap_out (struct frame_data *frame)
       remove_frame (frame);
       pagedir_clear_page (data->owner->pagedir, data->upage);
       break;
+  }
+
+  data->is_swapped = true;
+
+  if (!is_lock_held) {
+    release_syscall_lock ();
   }
 }
 

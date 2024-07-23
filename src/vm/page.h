@@ -26,6 +26,7 @@ struct sup_data
 
   enum file_type type;
   size_t sector_idx;
+  bool is_swapped;
 };
 
 struct sup_data *sup_page_lookup (const void *address, struct hash sup_table);

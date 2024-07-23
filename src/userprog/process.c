@@ -196,6 +196,7 @@ process_exit (void)
   uint32_t *pd;
 
   hash_destroy (&cur->sup_page_table, sup_page_free);
+  clear_frame_table ();
 
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
