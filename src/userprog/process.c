@@ -198,7 +198,11 @@ process_exit (void)
 
   hash_destroy (&cur->mmap_table, mmap_free);
   hash_destroy (&cur->sup_page_table, sup_page_free);
+  acquire_frame_lock ();
+  acquire_evict_lock ();
   clear_frame_table ();
+  release_evict_lock ();
+  release_frame_lock ();
   
   close_all_opened_file (cur->process);
   file_close (cur->running_file);

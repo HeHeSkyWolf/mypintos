@@ -23,11 +23,15 @@ struct mmaped_file {
   struct hash_elem hash_elem;
 };
 
+struct lock_with_ctr {
+  struct lock lock;
+  int ctr;
+};
+
 void syscall_init (void);
 void kernel_exit (int status);
 void acquire_syscall_lock (void);
 void release_syscall_lock (void);
-bool syscall_lock_held_by_current_thread (void);
 
 unsigned mmap_hash (const struct hash_elem *e, void *aux UNUSED);
 bool mmap_less (const struct hash_elem *a_, const struct hash_elem *b_, 

@@ -156,11 +156,11 @@ page_fault (struct intr_frame *f)
   write = (f->error_code & PF_W) != 0;
   user = (f->error_code & PF_U) != 0;
   // printf("fault addr: %p\n", fault_addr);
-  // acquire_exception_lock ();
+  acquire_exception_lock ();
   void *esp;
   if (user) {
     if (!is_user_vaddr (fault_addr)) {
-      // release_exception_lock ();
+      release_exception_lock ();
       // printf("invalid user addr exception error\n");
       kernel_exit (-1);
     }
@@ -175,12 +175,12 @@ page_fault (struct intr_frame *f)
       // printf("fault addr: %p\n", fault_addr);
       bool success = handle_page_fault (fault_addr, esp);
       if (success) {
-        // release_exception_lock ();
+        release_exception_lock ();
         return;
       }
     }
   }
-  // release_exception_lock ();
+  release_exception_lock ();
   // printf("exception error\n");
   // printf ("Page fault at %p: %s error %s page in %s context.\n",
   //         fault_addr,
@@ -261,6 +261,7 @@ handle_page_fault (void *fault_addr, void *esp)
     
     /* Get a page of memory. */
     if (kpage == NULL) {
+      acquire_evict_lock ();
       struct frame_data *victim = select_victim_frame ();
       if (victim == NULL) {
         // printf("fail to select victim #2\n");
@@ -272,6 +273,7 @@ handle_page_fault (void *fault_addr, void *esp)
         // printf("fail to get page #2\n");
         return false;
       }
+      release_evict_lock ();
     }
     struct frame_data *frame = create_frame (kpage, data);
     add_frame_to_table (frame);

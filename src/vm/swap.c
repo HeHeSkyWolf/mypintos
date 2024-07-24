@@ -41,10 +41,7 @@ free_swapped_sup (size_t sector_idx)
 bool
 swap_in (uint8_t *kpage, struct sup_data *data)
 {
-  bool is_lock_held = syscall_lock_held_by_current_thread ();
-  if (!is_lock_held) {
-    acquire_syscall_lock ();
-  }
+  acquire_syscall_lock ();
 
   for (size_t i = 0; i < SECTOR_PER_PAGE; i++) {
     block_read (swap_device, data->sector_idx * SECTOR_PER_PAGE + i, kpage + BLOCK_SECTOR_SIZE * i);
@@ -54,30 +51,21 @@ swap_in (uint8_t *kpage, struct sup_data *data)
   
   /* Add the page to the process's address space. */
   if (!install_page (data->upage, kpage, data->writable)) {
-    if (!is_lock_held) {
-      release_syscall_lock ();
-    }
+    release_syscall_lock ();
     palloc_free_page (kpage);
     return false; 
   }
 
   data->is_swapped = false;
 
-  if (!is_lock_held) {
-    release_syscall_lock ();
-  }
-
+  release_syscall_lock ();
   return true;
 }
 
 void
 swap_out (struct frame_data *frame)
 {  
-  bool is_lock_held = syscall_lock_held_by_current_thread ();
-  if (!is_lock_held) {
-    acquire_syscall_lock ();
-  }
-
+  acquire_syscall_lock ();
   struct sup_data *data = frame->sup_entry;
 
   // printf("swap out\n");
@@ -107,9 +95,7 @@ swap_out (struct frame_data *frame)
 
   data->is_swapped = true;
 
-  if (!is_lock_held) {
-    release_syscall_lock ();
-  }
+  release_syscall_lock ();
 }
 
 static void

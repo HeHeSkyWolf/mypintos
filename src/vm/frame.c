@@ -9,12 +9,40 @@
 #include "vm/page.h"
 
 static struct list frame_table;
+static struct lock evict_lock;
+static struct lock frame_lock;
 
 void
 frame_table_init (void)
 {
   lru_start = NULL;
   list_init (&frame_table);
+  lock_init (&frame_lock);
+  lock_init (&evict_lock);
+}
+
+void
+acquire_frame_lock (void)
+{
+  lock_acquire (&frame_lock);
+}
+
+void
+release_frame_lock (void)
+{
+  lock_release (&frame_lock);
+}
+
+void
+acquire_evict_lock (void)
+{
+  lock_acquire (&evict_lock);
+}
+
+void
+release_evict_lock (void)
+{
+  lock_release (&evict_lock);
 }
 
 void

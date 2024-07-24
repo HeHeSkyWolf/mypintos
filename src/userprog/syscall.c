@@ -17,15 +17,15 @@
 #include "vm/frame.h"
 #include "vm/page.h"
 
-static struct lock syscall_lock;
+static struct lock_with_ctr syscall_lock;
 
 static void syscall_handler (struct intr_frame *);
 
 static void valid_uaddr (const void *uaddr);
 void kernel_exit (int status);
+static bool holding_syscall_lock (void);
 void acquire_syscall_lock (void);
 void release_syscall_lock (void);
-bool syscall_lock_held_by_current_thread (void);
 static struct file_open *find_file_by_fd (struct process *, int fd);
 static int get_user (const uint8_t *uaddr);
 static void syscall_halt (void);
@@ -55,7 +55,8 @@ static void syscall_munmap (struct intr_frame *);
 void
 syscall_init (void) 
 {
-  lock_init (&syscall_lock);
+  lock_init (&(syscall_lock.lock));
+  syscall_lock.ctr = 0;
   intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
 }
 
@@ -69,22 +70,28 @@ valid_uaddr (const void *uaddr)
     kernel_exit (-1);
 }
 
+static bool
+holding_syscall_lock (void)
+{
+  return lock_held_by_current_thread (&(syscall_lock.lock));
+}
+
 void 
 acquire_syscall_lock (void)
 {
-  lock_acquire (&syscall_lock);
+  if (!holding_syscall_lock ()) {
+    lock_acquire (&(syscall_lock.lock));
+  }
+  syscall_lock.ctr += 1;
 }
 
 void
 release_syscall_lock (void)
 {
-  lock_release (&syscall_lock);
-}
-
-bool
-syscall_lock_held_by_current_thread (void)
-{
-  return lock_held_by_current_thread (&syscall_lock);
+  syscall_lock.ctr -= 1;
+  if (holding_syscall_lock () && syscall_lock.ctr == 0) {
+    lock_release (&(syscall_lock.lock));
+  }
 }
 
 static struct file_open *
@@ -162,6 +169,10 @@ kernel_exit (int status)
   printf ("%s: exit(%d)\n", cur->name, status);
 
   // printf("kernel exit\n");
+
+  if (holding_syscall_lock ()) {
+    release_syscall_lock ();
+  }
   
   cur->process->return_status = status;
   
@@ -179,25 +190,18 @@ syscall_exit (struct intr_frame *f UNUSED)
   int args[1];
   copy_in (args, (uint32_t *) f->esp + 1, sizeof *args);
   int status = (int) args[0];
-  
+
+  acquire_syscall_lock ();
   struct thread *cur = thread_current ();
 
   printf ("%s: exit(%d)\n", cur->name, status);
   
   // printf("normal exit\n");
 
-  bool is_lock_held = syscall_lock_held_by_current_thread ();
-  if (!is_lock_held) {
-    acquire_syscall_lock ();
-  }
-
   cur->process->return_status = status;
   f->eax = status;
+  release_syscall_lock ();
 
-  if (!is_lock_held) {
-    release_syscall_lock ();
-  }
-  
   thread_exit ();
 }
 
@@ -211,17 +215,10 @@ syscall_exec (struct intr_frame *f UNUSED) {
 
   // printf("%d syscall exec\n", thread_current()->tid);
 
-  bool is_lock_held = syscall_lock_held_by_current_thread ();
-  if (!is_lock_held) {
-    acquire_syscall_lock ();
-  }
-
+  // acquire_syscall_lock ();
   tid_t tid = process_execute (cmd_line);
   f->eax = tid;
-  
-  if (!is_lock_held) {
-    release_syscall_lock ();
-  }
+  // release_syscall_lock ();
 }
 
 static void
@@ -279,12 +276,12 @@ syscall_open (struct intr_frame *f UNUSED)
   valid_uaddr ((void *) args[0]);
 
   const char *file_name = (const char *) args[0];
-
+  
+  acquire_syscall_lock ();
   struct file *file = filesys_open (file_name);
 
   // printf("%d syscall open\n", thread_current()->tid);
 
-  acquire_syscall_lock ();
   if (file == NULL) {
     f->eax = -1;
   } 

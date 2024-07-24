@@ -46,10 +46,8 @@ sup_page_free (struct hash_elem *e, void *aux UNUSED)
 bool
 load_file (uint8_t *kpage, struct sup_data *data)
 {
-  bool is_lock_held = syscall_lock_held_by_current_thread ();
-  if (!is_lock_held) {
-    acquire_syscall_lock ();
-  }
+  acquire_syscall_lock ();
+  acquire_frame_lock ();
   // printf("page fault vaddr: %d, %p\n", data->owner->tid, data->upage);
 
   // printf("page fault kvaddr: %p\n", kpage);
@@ -58,9 +56,8 @@ load_file (uint8_t *kpage, struct sup_data *data)
       (int) data->page_read_bytes)
     {
       palloc_free_page (kpage);
-      if (!is_lock_held) {
-        release_syscall_lock ();
-      }
+      release_frame_lock ();
+      release_syscall_lock ();
       return false; 
     }
   memset (kpage + data->page_read_bytes, 0, data->page_zero_bytes);
@@ -69,15 +66,13 @@ load_file (uint8_t *kpage, struct sup_data *data)
   if (!install_page (data->upage, kpage, data->writable)) 
     {
       palloc_free_page (kpage);
-      if (!is_lock_held) {
-        release_syscall_lock ();
-      }
+      release_frame_lock ();
+      release_syscall_lock ();
       return false; 
     }
 
-  if (!is_lock_held) {
-    release_syscall_lock ();
-  }
+  release_frame_lock ();
+  release_syscall_lock ();
   return true;
 }
 
@@ -101,11 +96,6 @@ create_sup_page (uint8_t *upage, struct file *file, bool writable, off_t ofs,
 bool
 grow_stack (uint8_t *kpage, void *rounded_addr)
 {
-  bool is_lock_held = syscall_lock_held_by_current_thread ();
-  if (!is_lock_held) {
-    acquire_syscall_lock ();
-  }
-
   struct sup_data *data = create_sup_page (rounded_addr, NULL, true, 0, 0, 0);
   data->type = VM_ELF;
 
@@ -113,9 +103,7 @@ grow_stack (uint8_t *kpage, void *rounded_addr)
   if (!install_page (data->upage, kpage, data->writable)) {
     free(data);
     palloc_free_page (kpage);
-    if (!is_lock_held) {
-      release_syscall_lock ();
-    }
+    release_syscall_lock ();
     return false; 
   }
 
@@ -127,9 +115,5 @@ grow_stack (uint8_t *kpage, void *rounded_addr)
 
   hash_insert (&thread_current ()->sup_page_table, &data->hash_elem);
   frame->is_pinned = false;
-
-  if (!is_lock_held) {
-    release_syscall_lock ();
-  }
   return true;
 }
