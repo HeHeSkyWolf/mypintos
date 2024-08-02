@@ -225,9 +225,9 @@ syscall_open (struct intr_frame *f UNUSED)
 
   const char *file_name = (const char *) args[0];
 
+  lock_acquire (&syscall_lock);
   struct file *file = filesys_open (file_name);
 
-  lock_acquire (&syscall_lock);
   if (file == NULL) {
     f->eax = -1;
   } else {
