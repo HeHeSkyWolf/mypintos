@@ -204,11 +204,6 @@ page_fault (struct intr_frame *f)
 static bool
 handle_page_fault (void *fault_addr, void *esp)
 {
-  if (!is_swap_init) {
-    swap_init ();
-    is_swap_init = true;
-  }
-
   struct thread *cur = thread_current ();
   void *rounded_addr = pg_round_down (fault_addr);
   struct sup_data *data = sup_page_lookup (rounded_addr, cur->sup_page_table);
@@ -230,6 +225,7 @@ handle_page_fault (void *fault_addr, void *esp)
     
     /* Get a page of memory. */
     if (kpage == NULL) {
+      acquire_evict_lock ();
       struct frame_data *victim = select_victim_frame ();
       if (victim == NULL) {
         // printf("fail to select victim #1\n");
@@ -241,6 +237,7 @@ handle_page_fault (void *fault_addr, void *esp)
         // printf("fail to get page #1\n");
         return false;
       }
+      release_evict_lock ();
     }
     struct frame_data *frame = create_frame (kpage, data);
     add_frame_to_table (frame);
@@ -261,6 +258,7 @@ handle_page_fault (void *fault_addr, void *esp)
     
     /* Get a page of memory. */
     if (kpage == NULL) {
+      // printf("have sup\n");
       acquire_evict_lock ();
       struct frame_data *victim = select_victim_frame ();
       if (victim == NULL) {

@@ -89,6 +89,7 @@ create_sup_page (uint8_t *upage, struct file *file, bool writable, off_t ofs,
   data->offset = ofs;
   data->writable = writable;
   data->sector_idx = 0;
+  data->is_swapped = false;
 
   return data;
 }

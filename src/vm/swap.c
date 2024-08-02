@@ -22,6 +22,7 @@ static void swap_out_disk (struct frame_data *frame, struct sup_data *data);
 void
 swap_init (void)
 {
+  // printf("swap init\n");
   lock_init (&swap_lock);
   swap_device = block_get_role (BLOCK_SWAP);
   if (swap_device == NULL)
@@ -64,7 +65,7 @@ swap_in (uint8_t *kpage, struct sup_data *data)
 
 void
 swap_out (struct frame_data *frame)
-{  
+{ 
   acquire_syscall_lock ();
   struct sup_data *data = frame->sup_entry;
 
@@ -101,6 +102,10 @@ swap_out (struct frame_data *frame)
 static void
 swap_out_disk (struct frame_data *frame, struct sup_data *data)
 {
+  if (swap_map == NULL) {
+    swap_init ();
+    is_swap_init = true;
+  }
   // printf("%d\n", data->page_read_bytes);
   lock_acquire (&swap_lock);
   size_t sector_idx = bitmap_scan_and_flip (swap_map, 0, 1, false);
