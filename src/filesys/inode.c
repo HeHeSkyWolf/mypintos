@@ -22,6 +22,11 @@
 static struct lock inode_lock;
 static bool is_extending;
 
+static void lock_inode (struct inode *inode);
+static void unlock_inode (struct inode *inode);
+static void acquire_inode_lock (void);
+static void release_inode_lock (void);
+
 struct indirect_inode
 {
   block_sector_t direct_blocks[INDIRECT_BLOCKS];
@@ -63,7 +68,32 @@ struct inode
     bool removed;                       /* True if deleted, false otherwise. */
     int deny_write_cnt;                 /* 0: writes ok, >0: deny writes. */
     struct inode_disk data;             /* Inode content. */
+    struct lock lock;
   };
+
+static void
+lock_inode (struct inode *inode)
+{
+  lock_acquire (&inode->lock);
+}
+
+static void
+unlock_inode (struct inode *inode)
+{
+  lock_release (&inode->lock);
+}
+
+static void
+acquire_inode_lock (void)
+{
+  lock_acquire (&inode_lock);
+}
+
+static void
+release_inode_lock (void)
+{
+  lock_release (&inode_lock);
+}
 
 /* Returns the block device sector that contains byte offset POS
    within INODE.
@@ -245,6 +275,8 @@ inode_open (block_sector_t sector)
   struct list_elem *e;
   struct inode *inode;
 
+  acquire_inode_lock ();
+
   /* Check whether this inode is already open. */
   for (e = list_begin (&open_inodes); e != list_end (&open_inodes);
        e = list_next (e)) 
@@ -252,15 +284,18 @@ inode_open (block_sector_t sector)
       inode = list_entry (e, struct inode, elem);
       if (inode->sector == sector) 
         {
+          release_inode_lock ();
           inode_reopen (inode);
           return inode; 
         }
     }
-
+  
   /* Allocate memory. */
   inode = malloc (sizeof *inode);
-  if (inode == NULL)
+  if (inode == NULL) {
+    release_inode_lock ();
     return NULL;
+  }
 
   /* Initialize. */
   list_push_front (&open_inodes, &inode->elem);
@@ -268,7 +303,10 @@ inode_open (block_sector_t sector)
   inode->open_cnt = 1;
   inode->deny_write_cnt = 0;
   inode->removed = false;
+  lock_init (&inode->lock);
   block_read (fs_device, inode->sector, &inode->data);
+
+  release_inode_lock ();
   return inode;
 }
 
@@ -392,13 +430,19 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
   while (size > 0) 
     {
       /* Disk sector to read, starting byte offset within sector. */
-      if (is_extending) {
-        lock_acquire (&inode_lock);
-      }
+      // if (is_extending) {
+      //   printf("waiting for extension\n");
+      //   acquire_inode_lock ();
+        
+      // }
+      lock_inode (inode);
       block_sector_t sector_idx = byte_to_sector (inode, offset);
-      if (lock_held_by_current_thread (&inode_lock)) {
-        lock_release (&inode_lock);
-      }
+      unlock_inode (inode);
+      // if (lock_held_by_current_thread (&inode->lock)) {
+      //   printf("done waiting for extension\n");
+        
+      //   release_inode_lock ();
+      // }
       int sector_ofs = offset % BLOCK_SECTOR_SIZE;
 
       /* Bytes left in inode, bytes left in sector, lesser of the two. */
@@ -462,7 +506,8 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
   if (new_len > orig_len) {
     // printf("extension is triggered\n");
 
-    lock_acquire (&inode_lock);
+    lock_inode (inode);
+    // acquire_inode_lock ();
     is_extending = true;
     
     size_t orig_sectors = bytes_to_sectors (orig_len);
@@ -544,7 +589,8 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
     block_write (fs_device, inode->sector, &inode->data);
 
     is_extending = false;
-    lock_release (&inode_lock);
+    // release_inode_lock ();
+    unlock_inode (inode);
   }
 
   while (size > 0) 

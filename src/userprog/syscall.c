@@ -50,7 +50,7 @@ struct mmaped_file *create_mmap_file (void);
 static void unmap_map_file (struct hash_elem *hash_e, void *aux UNUSED);
 static void syscall_mmap (struct intr_frame *);
 static void syscall_munmap (struct intr_frame *);
-
+static void set_pin (void *start, int size, bool value);
 
 void
 syscall_init (void) 
@@ -275,9 +275,10 @@ syscall_open (struct intr_frame *f UNUSED)
   acquire_syscall_lock ();
   struct file *file = filesys_open (file_name);
 
-  // printf("%d syscall open\n", thread_current()->tid);
+  // printf("%d syscall open %s\n", thread_current()->tid, file_name);
 
   if (file == NULL) {
+    // printf("open failed\n");
     f->eax = -1;
   } 
   else {
@@ -328,6 +329,7 @@ syscall_read (struct intr_frame *f UNUSED)
   // printf("%d syscall read\n", thread_current()->tid);
 
   acquire_syscall_lock ();
+  set_pin (buffer, size, true);
   if (fd == STDIN_FILENO) {
     char *keyboard_input = "";
     for (int i = 0; i < args[2]; i++) {
@@ -340,11 +342,13 @@ syscall_read (struct intr_frame *f UNUSED)
   else {
     struct file_open *f_opened = find_file_by_fd (thread_current()->process, fd);
     if (f_opened == NULL) {
+      set_pin (buffer, size, false);
       release_syscall_lock ();
       kernel_exit (-1);
     }
     f->eax = file_read (f_opened->file, buffer, size);
   }
+  set_pin (buffer, size, false);
   release_syscall_lock ();
 }
 
@@ -365,6 +369,7 @@ syscall_write (struct intr_frame *f UNUSED)
   if (!holding_syscall_lock ()) {
     acquire_syscall_lock ();
   }
+  set_pin (buffer, size, true);
   if (fd == STDOUT_FILENO) {
     putbuf (buffer, size);
     f->eax = size;
@@ -372,11 +377,13 @@ syscall_write (struct intr_frame *f UNUSED)
   else {
     struct file_open *f_opened = find_file_by_fd (thread_current()->process, fd);
     if (f_opened == NULL) {
+      set_pin (buffer, size, false);
       release_syscall_lock ();
       kernel_exit (-1);
     }
     f->eax = file_write (f_opened->file, buffer, size);
   }
+  set_pin (buffer, size, false);
   release_syscall_lock ();
 }
 
@@ -711,5 +718,33 @@ syscall_handler (struct intr_frame *f UNUSED)
       /* kill process like this? sc-boundary-3 */
       kernel_exit (-1);
       break;
+  }
+}
+
+static void
+set_pin (void *start, int size, bool value)
+{
+  if (start > PHYS_BASE - MAX_STACK_SIZE) {
+    return;
+  }
+  void *buffer_addr = pg_round_down (start);
+  // printf("buffer addr: %p setting to %d\n", buffer_addr, value);
+  struct frame_data *data;
+  while (buffer_addr <= start + size) {
+    struct thread *cur = thread_current ();
+    struct sup_data *sup = sup_page_lookup (buffer_addr, cur->sup_page_table);
+    if (sup == NULL) {
+      return;
+    }
+
+    data = find_frame (cur, buffer_addr);
+    if (data == NULL) {
+      // printf("can't set pin\n");
+      return;
+    }
+
+    data->is_pinned = value;
+    buffer_addr += PGSIZE;
+    data = NULL;
   }
 }

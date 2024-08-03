@@ -107,6 +107,13 @@ create_sup_page (uint8_t *upage, struct file *file, bool writable, off_t ofs,
 bool
 grow_stack (uint8_t *kpage, void *rounded_addr)
 {
+  bool is_holding = false;
+  if (!holding_syscall_lock ()) {
+    acquire_syscall_lock ();
+    is_holding = true;
+  }
+  acquire_frame_lock ();
+
   struct sup_data *data = create_sup_page (rounded_addr, NULL, true, 0, 0, 0);
   data->type = VM_ELF;
 
@@ -114,6 +121,10 @@ grow_stack (uint8_t *kpage, void *rounded_addr)
   if (!install_page (data->upage, kpage, data->writable)) {
     free(data);
     palloc_free_page (kpage);
+    release_frame_lock ();
+    if (is_holding) {
+      release_syscall_lock ();
+    }
     return false; 
   }
 
@@ -125,5 +136,10 @@ grow_stack (uint8_t *kpage, void *rounded_addr)
 
   hash_insert (&thread_current ()->sup_page_table, &data->hash_elem);
   frame->is_pinned = false;
+
+  release_frame_lock ();
+  if (is_holding) {
+    release_syscall_lock ();
+  }
   return true;
 }
