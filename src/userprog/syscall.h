@@ -23,13 +23,9 @@ struct mmaped_file {
   struct hash_elem hash_elem;
 };
 
-struct lock_with_ctr {
-  struct lock lock;
-  int ctr;
-};
-
 void syscall_init (void);
 void kernel_exit (int status);
+bool holding_syscall_lock (void);
 void acquire_syscall_lock (void);
 void release_syscall_lock (void);
 

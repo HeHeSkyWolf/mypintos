@@ -17,13 +17,13 @@
 #include "vm/frame.h"
 #include "vm/page.h"
 
-static struct lock_with_ctr syscall_lock;
+static struct lock syscall_lock;
 
 static void syscall_handler (struct intr_frame *);
 
 static void valid_uaddr (const void *uaddr);
 void kernel_exit (int status);
-static bool holding_syscall_lock (void);
+bool holding_syscall_lock (void);
 void acquire_syscall_lock (void);
 void release_syscall_lock (void);
 static struct file_open *find_file_by_fd (struct process *, int fd);
@@ -55,8 +55,7 @@ static void syscall_munmap (struct intr_frame *);
 void
 syscall_init (void) 
 {
-  lock_init (&(syscall_lock.lock));
-  syscall_lock.ctr = 0;
+  lock_init (&syscall_lock);
   intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
 }
 
@@ -70,27 +69,27 @@ valid_uaddr (const void *uaddr)
     kernel_exit (-1);
 }
 
-static bool
+bool
 holding_syscall_lock (void)
 {
-  return lock_held_by_current_thread (&(syscall_lock.lock));
+  return lock_held_by_current_thread (&syscall_lock);
 }
 
 void 
 acquire_syscall_lock (void)
 {
-  if (!holding_syscall_lock ()) {
-    lock_acquire (&(syscall_lock.lock));
-  }
-  syscall_lock.ctr += 1;
+  // struct thread *t = thread_current();
+  // printf("%d acquired syscall lock\n", t->tid);
+  lock_acquire (&syscall_lock);
 }
 
 void
 release_syscall_lock (void)
 {
-  syscall_lock.ctr -= 1;
-  if (holding_syscall_lock () && syscall_lock.ctr == 0) {
-    lock_release (&(syscall_lock.lock));
+  // struct thread *t = thread_current();
+  // printf("%d released syscall lock\n", t->tid);
+  if (holding_syscall_lock ()) {
+    lock_release (&syscall_lock);
   }
 }
 
@@ -367,7 +366,9 @@ syscall_write (struct intr_frame *f UNUSED)
 
   // printf("%d syscall write\n", thread_current()->tid);
 
-  acquire_syscall_lock ();
+  if (!holding_syscall_lock ()) {
+    acquire_syscall_lock ();
+  }
   if (fd == STDOUT_FILENO) {
     putbuf (buffer, size);
     f->eax = size;

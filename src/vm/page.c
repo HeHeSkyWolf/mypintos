@@ -46,7 +46,12 @@ sup_page_free (struct hash_elem *e, void *aux UNUSED)
 bool
 load_file (uint8_t *kpage, struct sup_data *data)
 {
-  acquire_syscall_lock ();
+  bool is_holding = false;
+  if (!holding_syscall_lock ()) {
+    acquire_syscall_lock ();
+    is_holding = true;
+  }
+  // printf("load file\n");
   acquire_frame_lock ();
   // printf("page fault vaddr: %d, %p\n", data->owner->tid, data->upage);
 
@@ -57,7 +62,9 @@ load_file (uint8_t *kpage, struct sup_data *data)
     {
       palloc_free_page (kpage);
       release_frame_lock ();
-      release_syscall_lock ();
+      if (is_holding) {
+        release_syscall_lock ();
+      }
       return false; 
     }
   memset (kpage + data->page_read_bytes, 0, data->page_zero_bytes);
@@ -67,12 +74,16 @@ load_file (uint8_t *kpage, struct sup_data *data)
     {
       palloc_free_page (kpage);
       release_frame_lock ();
-      release_syscall_lock ();
+      if (is_holding) {
+        release_syscall_lock ();
+      }
       return false; 
     }
 
   release_frame_lock ();
-  release_syscall_lock ();
+  if (is_holding) {
+    release_syscall_lock ();
+  }
   return true;
 }
 
