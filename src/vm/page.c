@@ -114,7 +114,6 @@ grow_stack (uint8_t *kpage, void *rounded_addr)
   if (!install_page (data->upage, kpage, data->writable)) {
     free(data);
     palloc_free_page (kpage);
-    release_syscall_lock ();
     return false; 
   }
 
