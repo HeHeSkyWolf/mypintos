@@ -48,7 +48,7 @@ load_file (uint8_t *kpage, struct sup_data *data)
 {
   bool is_holding = false;
   if (!holding_syscall_lock ()) {
-    acquire_syscall_lock ();
+    // acquire_syscall_lock ();
     is_holding = true;
   }
   acquire_frame_lock ();
@@ -62,7 +62,7 @@ load_file (uint8_t *kpage, struct sup_data *data)
       palloc_free_page (kpage);
       release_frame_lock ();
       if (is_holding) {
-        release_syscall_lock ();
+        // release_syscall_lock ();
       }
       return false; 
     }
@@ -74,14 +74,14 @@ load_file (uint8_t *kpage, struct sup_data *data)
       palloc_free_page (kpage);
       release_frame_lock ();
       if (is_holding) {
-        release_syscall_lock ();
+        // release_syscall_lock ();
       }
       return false; 
     }
 
   release_frame_lock ();
   if (is_holding) {
-    release_syscall_lock ();
+    // release_syscall_lock ();
   }
   return true;
 }
@@ -109,7 +109,7 @@ grow_stack (uint8_t *kpage, void *rounded_addr)
 {
   bool is_holding = false;
   if (!holding_syscall_lock ()) {
-    acquire_syscall_lock ();
+    // acquire_syscall_lock ();
     is_holding = true;
   }
   acquire_frame_lock ();
@@ -123,7 +123,7 @@ grow_stack (uint8_t *kpage, void *rounded_addr)
     palloc_free_page (kpage);
     release_frame_lock ();
     if (is_holding) {
-      release_syscall_lock ();
+      // release_syscall_lock ();
     }
     return false; 
   }
@@ -139,7 +139,7 @@ grow_stack (uint8_t *kpage, void *rounded_addr)
 
   release_frame_lock ();
   if (is_holding) {
-    release_syscall_lock ();
+    // release_syscall_lock ();
   }
   return true;
 }

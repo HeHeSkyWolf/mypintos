@@ -44,7 +44,8 @@ swap_in (uint8_t *kpage, struct sup_data *data)
 {
   // printf("swap in\n");
   
-  acquire_syscall_lock ();
+  // acquire_syscall_lock ();
+  lock_acquire (&swap_lock);
 
   for (size_t i = 0; i < SECTOR_PER_PAGE; i++) {
     block_read (swap_device, data->sector_idx * SECTOR_PER_PAGE + i, kpage + BLOCK_SECTOR_SIZE * i);
@@ -61,7 +62,9 @@ swap_in (uint8_t *kpage, struct sup_data *data)
 
   data->is_swapped = false;
 
-  release_syscall_lock ();
+  lock_release (&swap_lock);
+
+  // release_syscall_lock ();
   return true;
 }
 
@@ -70,7 +73,7 @@ swap_out (struct frame_data *frame)
 { 
   // printf("swap out\n");
 
-  acquire_syscall_lock ();
+  // acquire_syscall_lock ();
   struct sup_data *data = frame->sup_entry;
 
   switch (data->type) {
@@ -98,7 +101,7 @@ swap_out (struct frame_data *frame)
 
   data->is_swapped = true;
 
-  release_syscall_lock ();
+  // release_syscall_lock ();
 }
 
 static void
@@ -111,7 +114,7 @@ swap_out_disk (struct frame_data *frame, struct sup_data *data)
   // printf("%d\n", data->page_read_bytes);
   lock_acquire (&swap_lock);
   size_t sector_idx = bitmap_scan_and_flip (swap_map, 0, 1, false);
-  lock_release (&swap_lock);
+  
   if (sector_idx == BITMAP_ERROR) {
     PANIC ("bitmap error");
   }
@@ -119,4 +122,5 @@ swap_out_disk (struct frame_data *frame, struct sup_data *data)
   for (size_t i = 0; i < SECTOR_PER_PAGE; i++) {
     block_write (swap_device, sector_idx * SECTOR_PER_PAGE + i, frame->kaddr + BLOCK_SECTOR_SIZE * i);
   }
+  lock_release (&swap_lock);
 }

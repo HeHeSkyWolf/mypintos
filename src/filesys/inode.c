@@ -429,6 +429,7 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
 
   while (size > 0) 
     {
+      
       /* Disk sector to read, starting byte offset within sector. */
       // if (is_extending) {
       //   printf("waiting for extension\n");
@@ -458,7 +459,9 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
       if (sector_ofs == 0 && chunk_size == BLOCK_SECTOR_SIZE)
         {
           /* Read full sector directly into caller's buffer. */
+          
           block_read (fs_device, sector_idx, buffer + bytes_read);
+          // printf("inode read at\n");
         }
       else 
         {

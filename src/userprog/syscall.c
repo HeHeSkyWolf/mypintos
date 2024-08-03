@@ -186,7 +186,7 @@ syscall_exit (struct intr_frame *f UNUSED)
   copy_in (args, (uint32_t *) f->esp + 1, sizeof *args);
   int status = (int) args[0];
 
-  acquire_syscall_lock ();
+  // acquire_syscall_lock ();
   struct thread *cur = thread_current ();
 
   printf ("%s: exit(%d)\n", cur->name, status);
@@ -195,7 +195,7 @@ syscall_exit (struct intr_frame *f UNUSED)
 
   cur->process->return_status = status;
   f->eax = status;
-  release_syscall_lock ();
+  // release_syscall_lock ();
 
   thread_exit ();
 }
@@ -240,10 +240,10 @@ syscall_create (struct intr_frame *f UNUSED)
 
   // printf("%d syscall create\n", thread_current()->tid);
 
-  acquire_syscall_lock ();
+  // acquire_syscall_lock ();
   bool success = filesys_create (file, initial_size);
   f->eax = success;
-  release_syscall_lock ();
+  // release_syscall_lock ();
 }
 
 static void
@@ -257,10 +257,10 @@ syscall_remove (struct intr_frame *f UNUSED)
 
   // printf("%d syscall remove\n", thread_current()->tid);
 
-  acquire_syscall_lock ();
+  // acquire_syscall_lock ();
   bool success = filesys_remove (file);
   f->eax = success;
-  release_syscall_lock ();
+  // release_syscall_lock ();
 }
 
 static void
@@ -272,7 +272,7 @@ syscall_open (struct intr_frame *f UNUSED)
 
   const char *file_name = (const char *) args[0];
   
-  acquire_syscall_lock ();
+  // acquire_syscall_lock ();
   struct file *file = filesys_open (file_name);
 
   // printf("%d syscall open %s\n", thread_current()->tid, file_name);
@@ -288,10 +288,12 @@ syscall_open (struct intr_frame *f UNUSED)
     f_open->fd = cur->next_fd;
     f_open->file = file;
 
+    acquire_syscall_lock ();
     list_push_back (&cur->process->file_opened_list, &f_open->file_elem);
+    release_syscall_lock ();
     f->eax = f_open->fd;
   }
-  release_syscall_lock ();
+  // release_syscall_lock ();
 }
 
 static void
@@ -303,7 +305,7 @@ syscall_filesize (struct intr_frame *f UNUSED)
 
   // printf("%d syscall filesize\n", thread_current()->tid);
   
-  acquire_syscall_lock ();
+  // acquire_syscall_lock ();
   struct file_open *f_opened = find_file_by_fd (thread_current()->process, fd);
   if (f_opened == NULL) {
     f->eax = 0;
@@ -311,7 +313,7 @@ syscall_filesize (struct intr_frame *f UNUSED)
   else {
     f->eax = file_length (f_opened->file);
   }
-  release_syscall_lock ();
+  // release_syscall_lock ();
 }
 
 static void
@@ -328,7 +330,7 @@ syscall_read (struct intr_frame *f UNUSED)
 
   // printf("%d syscall read\n", thread_current()->tid);
 
-  acquire_syscall_lock ();
+  // acquire_syscall_lock ();
   set_pin (buffer, size, true);
   if (fd == STDIN_FILENO) {
     char *keyboard_input = "";
@@ -343,13 +345,13 @@ syscall_read (struct intr_frame *f UNUSED)
     struct file_open *f_opened = find_file_by_fd (thread_current()->process, fd);
     if (f_opened == NULL) {
       set_pin (buffer, size, false);
-      release_syscall_lock ();
+      // release_syscall_lock ();
       kernel_exit (-1);
     }
     f->eax = file_read (f_opened->file, buffer, size);
   }
   set_pin (buffer, size, false);
-  release_syscall_lock ();
+  // release_syscall_lock ();
 }
 
 static void
@@ -366,9 +368,9 @@ syscall_write (struct intr_frame *f UNUSED)
 
   // printf("%d syscall write\n", thread_current()->tid);
 
-  if (!holding_syscall_lock ()) {
-    acquire_syscall_lock ();
-  }
+  // if (!holding_syscall_lock ()) {
+  //   acquire_syscall_lock ();
+  // }
   set_pin (buffer, size, true);
   if (fd == STDOUT_FILENO) {
     putbuf (buffer, size);
@@ -378,13 +380,13 @@ syscall_write (struct intr_frame *f UNUSED)
     struct file_open *f_opened = find_file_by_fd (thread_current()->process, fd);
     if (f_opened == NULL) {
       set_pin (buffer, size, false);
-      release_syscall_lock ();
+      // release_syscall_lock ();
       kernel_exit (-1);
     }
     f->eax = file_write (f_opened->file, buffer, size);
   }
   set_pin (buffer, size, false);
-  release_syscall_lock ();
+  // release_syscall_lock ();
 }
 
 static void
@@ -398,12 +400,12 @@ syscall_seek (struct intr_frame *f UNUSED)
 
   // printf("%d syscall seek\n", thread_current()->tid);
 
-  acquire_syscall_lock ();
+  // acquire_syscall_lock ();
   struct file_open *f_opened = find_file_by_fd (thread_current()->process, fd);
   if (f_opened != NULL) {
     file_seek (f_opened->file, position);
   }
-  release_syscall_lock ();
+  // release_syscall_lock ();
 }
 
 static void
@@ -416,7 +418,7 @@ syscall_tell (struct intr_frame *f UNUSED)
 
   // printf("%d syscall tell\n", thread_current()->tid);
 
-  acquire_syscall_lock ();
+  // acquire_syscall_lock ();
   struct file_open *f_opened = find_file_by_fd (thread_current()->process, fd);
   if (f_opened == NULL) {
     f->eax = -1;
@@ -424,7 +426,7 @@ syscall_tell (struct intr_frame *f UNUSED)
   else {
     f->eax = file_tell (f_opened->file);
   }
-  release_syscall_lock ();
+  // release_syscall_lock ();
 }
 
 static void
@@ -436,7 +438,7 @@ syscall_close (struct intr_frame *f UNUSED)
 
   // printf("%d syscall close\n", thread_current()->tid);
 
-  acquire_syscall_lock ();
+  // acquire_syscall_lock ();
   struct thread *cur = thread_current ();
   struct file_open *f_opened = find_file_by_fd (cur->process, fd);
   if (f_opened != NULL) {
@@ -444,7 +446,7 @@ syscall_close (struct intr_frame *f UNUSED)
     file_close (f_opened->file);
     free (f_opened);
   }
-  release_syscall_lock ();
+  // release_syscall_lock ();
 }
 
 unsigned
