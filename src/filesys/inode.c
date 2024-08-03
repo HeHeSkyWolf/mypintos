@@ -7,17 +7,38 @@
 #include "filesys/free-map.h"
 #include "threads/malloc.h"
 
+#include <stdio.h>
+
 /* Identifies an inode. */
 #define INODE_MAGIC 0x494e4f44
+
+#define DIRECT_BLOCKS 124
+// #define DIRECT_BLOCKS 126
+#define INDIRECT_BLOCKS 128
+#define MAX_FILE_SIZE 8 * 1024 * 1024
+
+struct indirect_inode
+{
+  block_sector_t direct_blocks[INDIRECT_BLOCKS];
+};
+
+struct doubly_indirect_inode
+{
+  block_sector_t indirect_blocks[INDIRECT_BLOCKS];
+};
 
 /* On-disk inode.
    Must be exactly BLOCK_SECTOR_SIZE bytes long. */
 struct inode_disk
   {
-    block_sector_t start;               /* First data sector. */
+    // block_sector_t start;               /* First data sector. */
     off_t length;                       /* File size in bytes. */
     unsigned magic;                     /* Magic number. */
-    uint32_t unused[125];               /* Not used. */
+    // uint32_t unused[125];               /* Not used. */
+
+    block_sector_t direct_table[DIRECT_BLOCKS];
+    block_sector_t indirect_table;
+    block_sector_t doubly_indirect_table;
   };
 
 /* Returns the number of sectors to allocate for an inode SIZE
@@ -47,8 +68,45 @@ static block_sector_t
 byte_to_sector (const struct inode *inode, off_t pos) 
 {
   ASSERT (inode != NULL);
-  if (pos < inode->data.length)
-    return inode->data.start + pos / BLOCK_SECTOR_SIZE;
+  if (pos < inode->data.length) {
+    if (pos > MAX_FILE_SIZE) {
+      return -1;
+    }
+
+    off_t sec_idx = pos / BLOCK_SECTOR_SIZE;
+    
+    if (sec_idx < DIRECT_BLOCKS) {
+      return inode->data.direct_table[sec_idx];
+    }
+    else if (sec_idx < DIRECT_BLOCKS + INDIRECT_BLOCKS && sec_idx >= DIRECT_BLOCKS) {
+      struct indirect_inode *table = malloc (sizeof (struct indirect_inode));
+      block_read (fs_device, inode->data.indirect_table, table);
+      
+      block_sector_t result = table->direct_blocks[sec_idx - DIRECT_BLOCKS];
+      
+      free (table);
+      return result;
+    }
+    else if (sec_idx >= DIRECT_BLOCKS + INDIRECT_BLOCKS) {
+      block_sector_t indirect_idx = sec_idx - (DIRECT_BLOCKS + INDIRECT_BLOCKS);
+      block_sector_t doubly_indirect_idx = indirect_idx / INDIRECT_BLOCKS;
+      indirect_idx = indirect_idx - INDIRECT_BLOCKS * doubly_indirect_idx;
+
+      struct doubly_indirect_inode *doubly_table = malloc (sizeof (struct doubly_indirect_inode));
+      block_read (fs_device, inode->data.doubly_indirect_table, doubly_table);
+
+      struct indirect_inode *table = malloc (sizeof (struct indirect_inode));
+      block_read (fs_device, doubly_table->indirect_blocks[doubly_indirect_idx], table);
+      block_sector_t result = table->direct_blocks[indirect_idx];
+
+      free (doubly_table);
+      free (table);
+      return result;
+    }
+    else {
+      return -1;
+    }
+  }
   else
     return -1;
 }
@@ -85,21 +143,87 @@ inode_create (block_sector_t sector, off_t length)
   if (disk_inode != NULL)
     {
       size_t sectors = bytes_to_sectors (length);
+      if (length > MAX_FILE_SIZE) {
+        free (disk_inode);
+        return success;
+      }
+
+      // printf("#sectors: %d\n", sectors);
       disk_inode->length = length;
       disk_inode->magic = INODE_MAGIC;
-      if (free_map_allocate (sectors, &disk_inode->start)) 
-        {
-          block_write (fs_device, sector, disk_inode);
-          if (sectors > 0) 
-            {
-              static char zeros[BLOCK_SECTOR_SIZE];
-              size_t i;
-              
-              for (i = 0; i < sectors; i++) 
-                block_write (fs_device, disk_inode->start + i, zeros);
+
+      disk_inode->indirect_table = 0;
+      bool need_indirect = false;
+      struct indirect_inode *indirect = NULL;
+      
+      disk_inode->doubly_indirect_table = 0;
+      bool need_doubly_indirect = false;
+      struct doubly_indirect_inode *doubly_indirect = NULL;
+      struct indirect_inode *indirect_for_doubly = NULL;
+      block_sector_t indirect_cnt = 0;
+      
+      block_sector_t sec_idx;
+      static char zeros[BLOCK_SECTOR_SIZE];
+
+      for (block_sector_t i = 0; i < sectors + 1; i++) {
+        if (free_map_allocate (1, &sec_idx)) {
+          if (i < DIRECT_BLOCKS) {
+            disk_inode->direct_table[i] = sec_idx;
+            block_write (fs_device, sec_idx, zeros);
+          }
+          else if (i < DIRECT_BLOCKS + INDIRECT_BLOCKS) {
+            if (!need_indirect) {
+              indirect = calloc (1, sizeof (*indirect));
+              free_map_allocate (1, &disk_inode->indirect_table);
+              need_indirect = true;
             }
-          success = true; 
-        } 
+            indirect->direct_blocks[i - DIRECT_BLOCKS] = sec_idx;
+            block_write (fs_device, sec_idx, zeros);
+          }
+          else {
+            if (!need_doubly_indirect) {
+              doubly_indirect = calloc (1, sizeof (*doubly_indirect));
+              free_map_allocate (1, &disk_inode->doubly_indirect_table);
+              need_doubly_indirect = true;
+              indirect_for_doubly = calloc (1, sizeof (*indirect_for_doubly));
+              free_map_allocate (1, &doubly_indirect->indirect_blocks[indirect_cnt]);
+            }
+
+            block_sector_t indirect_idx = i - (DIRECT_BLOCKS + INDIRECT_BLOCKS);
+            block_sector_t doubly_indirect_idx = indirect_idx / INDIRECT_BLOCKS;
+            indirect_idx = indirect_idx - INDIRECT_BLOCKS * doubly_indirect_idx;
+
+            if (doubly_indirect_idx > indirect_cnt) {
+              block_write (fs_device, doubly_indirect->indirect_blocks[indirect_cnt], indirect_for_doubly);
+              free (indirect_for_doubly);
+              indirect_for_doubly = calloc (1, sizeof (*indirect_for_doubly));
+              indirect_cnt = doubly_indirect_idx;
+              free_map_allocate (1, &doubly_indirect->indirect_blocks[indirect_cnt]);
+            }
+
+            indirect_for_doubly->direct_blocks[indirect_idx] = sec_idx;
+            block_write (fs_device, sec_idx, zeros);
+          }
+
+          if (!success) {
+            success = true;
+          }
+        }
+      }
+
+      if (need_indirect) {
+        block_write (fs_device, disk_inode->indirect_table, indirect);
+        free (indirect);
+      }
+
+      if (need_doubly_indirect) {
+        block_write (fs_device, doubly_indirect->indirect_blocks[indirect_cnt], indirect_for_doubly);
+        free (indirect_for_doubly);
+        block_write (fs_device, disk_inode->doubly_indirect_table, doubly_indirect);
+        free (doubly_indirect);
+      }
+
+      block_write (fs_device, sector, disk_inode);
       free (disk_inode);
     }
   return success;
@@ -177,8 +301,60 @@ inode_close (struct inode *inode)
       if (inode->removed) 
         {
           free_map_release (inode->sector, 1);
-          free_map_release (inode->data.start,
-                            bytes_to_sectors (inode->data.length)); 
+          size_t sectors = bytes_to_sectors (inode->data.length);
+
+          bool need_indirect = false;
+          struct indirect_inode *indirect = NULL;
+
+          bool need_doubly_indirect = false;
+          struct doubly_indirect_inode *doubly_indirect = NULL;
+          struct indirect_inode *indirect_for_doubly = NULL;
+          block_sector_t indirect_cnt = 0;
+
+          for (size_t i = 0; i < sectors + 1; i++) {
+            if (i < DIRECT_BLOCKS) {
+              free_map_release (inode->data.direct_table[i], 1);
+            }
+            else if (i < DIRECT_BLOCKS + INDIRECT_BLOCKS) {
+              if (!need_indirect) {
+                indirect = malloc (sizeof (*indirect));
+                block_read (fs_device, inode->data.indirect_table, indirect);
+                need_indirect = true;
+              }
+              free_map_release (indirect->direct_blocks[i - DIRECT_BLOCKS], 1);
+            }
+            else {
+              if (!need_doubly_indirect) {
+                doubly_indirect = malloc (sizeof (*doubly_indirect));
+                block_read (fs_device, inode->data.doubly_indirect_table, doubly_indirect);
+                need_doubly_indirect = true;
+                indirect_for_doubly = calloc (1, sizeof (*indirect_for_doubly));
+                block_read (fs_device, doubly_indirect->indirect_blocks[indirect_cnt], indirect_for_doubly);
+              }
+
+              block_sector_t indirect_idx = i - (DIRECT_BLOCKS + INDIRECT_BLOCKS);
+              block_sector_t doubly_indirect_idx = indirect_idx / INDIRECT_BLOCKS;
+              indirect_idx = indirect_idx - INDIRECT_BLOCKS * doubly_indirect_idx;
+
+              if (doubly_indirect_idx > indirect_cnt) {
+                free (indirect_for_doubly);
+                indirect_for_doubly = calloc (1, sizeof (*indirect_for_doubly));
+                indirect_cnt = doubly_indirect_idx;
+                block_read (fs_device, doubly_indirect->indirect_blocks[indirect_cnt], indirect_for_doubly);
+              }
+
+              free_map_release (indirect_for_doubly->direct_blocks[indirect_idx], 1);
+            }
+          }
+
+          if (need_indirect) {
+            free (indirect);
+          }
+
+          if (need_doubly_indirect) {
+            free (indirect_for_doubly);
+            free (doubly_indirect);
+          }
         }
 
       free (inode); 
