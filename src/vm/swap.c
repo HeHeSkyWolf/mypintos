@@ -42,6 +42,8 @@ free_swapped_sup (size_t sector_idx)
 bool
 swap_in (uint8_t *kpage, struct sup_data *data)
 {
+  // printf("swap in\n");
+  
   acquire_syscall_lock ();
 
   for (size_t i = 0; i < SECTOR_PER_PAGE; i++) {
@@ -66,10 +68,10 @@ swap_in (uint8_t *kpage, struct sup_data *data)
 void
 swap_out (struct frame_data *frame)
 { 
+  // printf("swap out\n");
+
   acquire_syscall_lock ();
   struct sup_data *data = frame->sup_entry;
-
-  // printf("swap out\n");
 
   switch (data->type) {
     case VM_ELF:
